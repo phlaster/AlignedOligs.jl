@@ -45,6 +45,6 @@ const DNA_COMP_TABLE_DEG = let
     b == UInt8('H') ? UInt8('D') : b == UInt8('h') ? UInt8('D') :
     b == UInt8('V') ? UInt8('B') : b == UInt8('v') ? UInt8('B') :
     b == UInt8('N') ? UInt8('N') : b == UInt8('n') ? UInt8('N') :
-    UInt8('.')
+    UInt8('-')
     [_comp_dna_deg(UInt8(i)) for i in 0:255]
 end

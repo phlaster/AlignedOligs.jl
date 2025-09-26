@@ -18,11 +18,13 @@ using Random
 @reexport using SeqFold
 using SeqFold: Structure
 
-export AbstractOlig, Olig, DegenerateOlig, OligView, n_unique_oligs, n_deg_pos, nondegens, description
+export AbstractOlig, Olig, DegenerateOlig, OligView, GappedOlig
+export n_unique_oligs, n_deg_pos, nondegens, description, hasgaps
 # export MSA, nseqs, getrange, getsequence, get_base_count, dry_msa, consensus_major, consensus_degen
 
 include("utils.jl")
 include("Oligs.jl")
+include("Oligs_display.jl")
 # include("MSA.jl")
 
 

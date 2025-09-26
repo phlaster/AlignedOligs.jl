@@ -4,15 +4,14 @@ using Aqua
 using JET
 
 @testset "AlignedOligs.jl" begin
-    # @testset "Code quality (Aqua.jl)" begin
-    #     Aqua.test_all(AlignedOligs)
-    # end
-    # @testset "Code linting (JET.jl)" begin
-    #     JET.test_package(AlignedOligs; target_defined_modules = true)
-    # end
+    @testset "Code quality (Aqua.jl)" begin
+        Aqua.test_all(AlignedOligs)
+    end
+    @testset "Code linting (JET.jl)" begin
+        JET.test_package(AlignedOligs; target_defined_modules = true)
+    end
     
     @testset "Oligs" begin
-    
         @testset "Olig" begin
             # Construction tests
             @test Olig("ACGT") isa Olig
@@ -72,6 +71,20 @@ using JET
             @test length(empty_olig) == 0
             @test String(empty_olig) == ""
             @test_throws BoundsError empty_olig[1]
+
+            @testset "Display" begin
+                olig = Olig("AGTC", "descr")
+                olig_nodesc = Olig("AGTC", "")
+                olig_long = Olig("A"^25, "")
+                # Short display
+                @test sprint(show, olig) == "Olig(\"AGTC\", len=4, desc=\"descr\")"
+                @test sprint(show, olig_nodesc) == "Olig(\"AGTC\", len=4)"
+                @test sprint(show, olig_long) == "Olig(\"AAAAAAAAAAAAAAAAA...\", len=25)"
+                # Full display
+                @test sprint(show, MIME"text/plain"(), olig) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: \"descr\"\n"
+                @test sprint(show, MIME"text/plain"(), olig_nodesc) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: (none)\n"
+                @test sprint(show, MIME"text/plain"(), olig_long) == "Olig\n  Sequence: AAAAAAAAAAAAAAAAAAAAAAAAA\n  Length: 25\n  Description: (none)\n"
+            end
         end
         
         @testset "DegenerateOlig" begin
@@ -167,6 +180,20 @@ using JET
             @test n_deg_pos(empty_deg) == 0
             @test n_unique_oligs(empty_deg) == 1
             @test length(nondegens(empty_deg)) == 1
+
+            @testset "Display" begin
+                dolig = DegenerateOlig("AGNTC", "descr")
+                dolig_nodesc = DegenerateOlig("AGNTC", "")
+                dolig_long = DegenerateOlig("N"^25, "")
+                # Short display
+                @test sprint(show, dolig) == "DegenerateOlig(\"AGNTC\", len=5, n_deg=1, vars=4, desc=\"descr\")"
+                @test sprint(show, dolig_nodesc) == "DegenerateOlig(\"AGNTC\", len=5, n_deg=1, vars=4)"
+                @test sprint(show, dolig_long) == "DegenerateOlig(\"NNNNNNNNNNNNNNNNN...\", len=25, n_deg=25, vars=>10k)"
+                # Full display
+                @test sprint(show, MIME"text/plain"(), dolig) == "DegenerateOlig\n  Sequence: AGNTC\n  Length: 5\n  Degenerate positions: 1\n  Unique variants: 4\n  Description: \"descr\"\n"
+                @test sprint(show, MIME"text/plain"(), dolig_nodesc) == "DegenerateOlig\n  Sequence: AGNTC\n  Length: 5\n  Degenerate positions: 1\n  Unique variants: 4\n  Description: (none)\n"
+                @test sprint(show, MIME"text/plain"(), dolig_long) == "DegenerateOlig\n  Sequence: NNNNNNNNNNNNNNNNNNNNNNNNN\n  Length: 25\n  Degenerate positions: 25\n  Unique variants: 1125899906842624\n  Description: (none)\n"
+            end
         end
         
         @testset "OligView" begin
@@ -256,6 +283,167 @@ using JET
             @test deg_subview isa AlignedOligs.OligView{DegenerateOlig}
             @test n_deg_pos(deg_subview) == 1
             @test n_unique_oligs(deg_subview) == 4
+
+            @testset "Display" begin
+                dolig_view = DegenerateOlig("AGNTC", "descr")[2:3]
+                dolig_view_nodesc = DegenerateOlig("AGNTC", "")[2:4]
+                dolig_view_long = DegenerateOlig("N"^25, "")[10:22]
+                # Short display
+                @test sprint(show, dolig_view) == "OligView(\"GN\", len=2, range=2:3, desc=\"descr\")"
+                @test sprint(show, dolig_view_nodesc) == "OligView(\"GNT\", len=3, range=2:4)"
+                @test sprint(show, dolig_view_long) == "OligView(\"NNNNNNNNNNNNN\", len=13, range=10:22)"
+                # Full display
+                @test sprint(show, MIME"text/plain"(), dolig_view) == "OligView{DegenerateOlig}\n  Viewed sequence: GN\n  Length: 2\n  Range: 2:3\n  Parent description: descr\n"
+                @test sprint(show, MIME"text/plain"(), dolig_view_nodesc) == "OligView{DegenerateOlig}\n  Viewed sequence: GNT\n  Length: 3\n  Range: 2:4\n  Parent description: \n"
+                @test sprint(show, MIME"text/plain"(), dolig_view_long) == "OligView{DegenerateOlig}\n  Viewed sequence: NNNNNNNNNNNNN\n  Length: 13\n  Range: 10:22\n  Parent description: \n"
+            end
+        end
+        
+        @testset "GappedOlig" begin
+            # Construction tests
+            olig = Olig("ACGTACGT", "gapped test")
+            gaps = [3 => 2, 7 => 1]  # positions 3-4 gap of 2, position 7 gap of 1
+            go = GappedOlig(olig, gaps, "gapped test")
+            @test go == GappedOlig("AC--GT-ACGT")
+            @test go isa GappedOlig
+            @test go.olig == olig
+            @test go.gaps == gaps
+            @test go.total_length == 8 + 2 + 1 == 11
+
+            # Invalid constructions
+            @test_throws ArgumentError GappedOlig(olig, [3 => 0])  # zero length gap
+            @test_throws ArgumentError GappedOlig(olig, [3 => 2, 4 => 1])  # overlapping
+            @test_throws ArgumentError GappedOlig(olig, [10 => 1])  # exceeds length
+            @test_throws ArgumentError GappedOlig(olig, [0 => 1])  # invalid start (assuming added check)
+            @test_throws ArgumentError GappedOlig(olig, [-1 => 1])  # negative start
+            @test GappedOlig(olig, Pair{Int,Int}[], "no gaps") isa GappedOlig  # empty gaps allowed
+
+            # String representation
+            @test String(go) == "AC--GT-ACGT"
+            @test String(GappedOlig(olig, Pair{Int,Int}[])) == "ACGTACGT"
+
+            # Length and isempty
+            @test length(go) == 11
+            @test isempty(go) == false
+            empty_go = GappedOlig(Olig(""), Pair{Int,Int}[], "empty")
+            @test isempty(empty_go) == true
+            @test length(empty_go) == 0
+            @test String(empty_go) == ""
+            gap_only = GappedOlig(Olig(""), [1 => 3], "gap only")
+            @test length(gap_only) == 3
+            @test String(gap_only) == "---"
+
+            # Indexing and char_at
+            @test go[1] == 'A'
+            @test go[2] == 'C'
+            @test go[3] == '-'
+            @test go[4] == '-'
+            @test go[5] == 'G'
+            @test go[6] == 'T'
+            @test go[7] == '-'
+            @test go[8] == 'A'
+            @test go[9] == 'C'
+            @test go[10] == 'G'
+            @test go[11] == 'T'
+            @test_throws BoundsError go[0]
+            @test_throws BoundsError go[12]
+
+            # Iteration
+            @test collect(go) == ['A','C','-','-','G','T','-','A','C','G','T']
+            @test first(go) == 'A'
+            @test last(go) == 'T'
+
+            # Slicing (as OligView)
+            @test String(go[3:7]) == "--GT-"
+            @test String(go[1:5]) == "AC--G"
+            @test String(go[8:end]) == "ACGT"
+
+            # Equality
+            go2 = GappedOlig(Olig("ACGTACGT"), [3=>2,7=>1])
+            @test go == go2
+            @test go == "AC--GT-ACGT"
+            @test "AC--GT-ACGT" == go
+            @test go != GappedOlig(Olig("ACGTACGT"), [3=>1])
+
+            # Description
+            @test description(go) == "gapped test"
+            @test description(GappedOlig(olig, Pair{Int,Int}[])) == "gapped test"
+            @test description(GappedOlig(olig, Pair{Int,Int}[], "new descr")) == "new descr"
+
+            # hasgaps
+            @test hasgaps(go) == true
+            @test hasgaps(GappedOlig(olig, Pair{Int,Int}[])) == false
+
+            # Properties
+            @test n_deg_pos(go) == 0
+            @test n_unique_oligs(go) == 1
+
+            # revcomp
+            rev_go = SeqFold.revcomp(go)
+            @test rev_go isa GappedOlig
+            @test rev_go.gaps == [5=>1, 8=>2]  # reversed positions
+            @test String(rev_go) == "ACGT-AC--GT"  # verified revcomp with gaps adjusted
+
+            # complement
+            comp_go = SeqFold.complement(go)
+            @test comp_go isa GappedOlig
+            @test comp_go.gaps == go.gaps  # gaps unchanged
+            @test String(comp_go) == "TG--CA-TGCA"  # complement of underlying, gaps preserved
+
+            # gc_content
+            @test SeqFold.gc_content(go) ≈ SeqFold.gc_content(olig)  # ignores gaps
+            @test isnan(SeqFold.gc_content(GappedOlig(Olig(""), [1=>1])))  # empty underlying
+
+            # Folding and energy errors if gaps present
+            @test_throws ErrorException SeqFold.fold(go)
+            @test_throws ErrorException SeqFold.dg(go)
+            @test_throws ErrorException SeqFold.dg_cache(go)
+            @test_throws ErrorException SeqFold.tm(go, go)
+            @test_throws ErrorException SeqFold.tm_cache(go, go)
+
+            # Non-gapped cases don't throw
+            no_gap_go = GappedOlig(olig, Pair{Int,Int}[])
+            @test SeqFold.fold(no_gap_go) == SeqFold.fold(olig.seq)  # assuming fold takes String
+            @test SeqFold.dg(no_gap_go) == SeqFold.dg(olig.seq)
+
+            # OligView on GappedOlig
+            go_view = go[2:6]
+            @test go_view isa AlignedOligs.OligView{GappedOlig}
+            @test String(go_view) == "C--GT"
+            @test length(go_view) == 5
+            @test collect(go_view) == ['C','-','-','G','T']
+            @test description(go_view) == "gapped test"
+            @test n_deg_pos(go_view) == 0
+            @test n_unique_oligs(go_view) == 1
+
+            # Subview
+            sub_go_view = go_view[2:4]
+            @test String(sub_go_view) == "--G"
+            @test length(sub_go_view) == 3
+
+            # NonDegenIterator
+            @test length(nondegens(go)) == 1
+            @test collect(nondegens(go)) == [go]
+
+            # Empty GappedOlig
+            @test collect(empty_go) == Char[]
+            @test n_deg_pos(empty_go) == 0
+            @test n_unique_oligs(empty_go) == 1
+
+
+            @testset "Display" begin
+                golig = GappedOlig("AG-T-C", "descr")
+                golig_nodesc = GappedOlig("AG-T-C", "")
+                golig_long = GappedOlig("A-"^10, "")
+                # Short display
+                @test sprint(show, golig) == "GappedOlig(\"AG-T-C\", len=6, gaps=2, desc=\"descr\")"
+                @test sprint(show, golig_nodesc) == "GappedOlig(\"AG-T-C\", len=6, gaps=2)"
+                @test sprint(show, golig_long) == "GappedOlig(\"A-A-A-A-A-A-A-A-A-A-\", len=20, gaps=10)"
+                # Full display
+                @test sprint(show, MIME"text/plain"(), golig) == "GappedOlig\n  Gapped sequence: AG-T-C\n  Length (with gaps): 6\n  Underlying Olig: AGTC\n  Gaps: [3 => 1, 5 => 1]\n  Description: \"descr\"\n"
+                @test sprint(show, MIME"text/plain"(), golig_nodesc) == "GappedOlig\n  Gapped sequence: AG-T-C\n  Length (with gaps): 6\n  Underlying Olig: AGTC\n  Gaps: [3 => 1, 5 => 1]\n  Description: (none)\n"
+                @test sprint(show, MIME"text/plain"(), golig_long) == "GappedOlig\n  Gapped sequence: A-A-A-A-A-A-A-A-A-A-\n  Length (with gaps): 20\n  Underlying Olig: AAAAAAAAAA\n  Gaps: [2 => 1, 4 => 1, 6 => 1, 8 => 1, 10 => 1, 12 => 1, 14 => 1, 16 => 1, 18 => 1, 20 => 1]\n  Description: (none)\n"
+            end
         end
     end
 end
