@@ -14,6 +14,7 @@ struct Olig <: AbstractOlig
         return new(seq, string(description))
     end
 end
+
 const EMPTY_OLIG = Olig("", "")
 
 struct DegenerateOlig <: AbstractOlig
@@ -83,9 +84,10 @@ Base.String(olig::DegenerateOlig) = olig.seq
 Base.String(go::GappedOlig) = _build_gapped_string(go)
 Base.String(ov::OligView) = String(parent(ov))[ov.range]
 
-Base.:(==)(o::AbstractOlig, s::AbstractString) = String(o) == s
-Base.:(==)(s::AbstractString, o::AbstractOlig) = o == s
-Base.:(==)(o1::AbstractOlig, o2::AbstractOlig) = String(o1) == String(o2)
+Base.:(==)(o::AbstractOlig, s::SubString{<:Base.AnnotatedString}) = String(o) == String(s)
+Base.:(==)(s::SubString{<:Base.AnnotatedString}, o::AbstractOlig) = o == s
+Base.:(==)(o::AbstractOlig, s::Base.AnnotatedString) = String(o) == String(s)
+Base.:(==)(s::Base.AnnotatedString, o::AbstractOlig) = o == s
 
 
 function _build_gapped_string(go::GappedOlig)
