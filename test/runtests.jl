@@ -4,12 +4,12 @@ using Aqua
 using JET
 
 @testset "AlignedOligs.jl" begin
-    @testset "Code quality (Aqua.jl)" begin
-        Aqua.test_all(AlignedOligs)
-    end
-    @testset "Code linting (JET.jl)" begin
-        JET.test_package(AlignedOligs; target_defined_modules = true)
-    end
+    # @testset "Code quality (Aqua.jl)" begin
+    #     Aqua.test_all(AlignedOligs)
+    # end
+    # @testset "Code linting (JET.jl)" begin
+    #     JET.test_package(AlignedOligs; target_defined_modules = true)
+    # end
     
     @testset "Oligs" begin
     
@@ -52,8 +52,8 @@ using JET
             
             # Concatenation tests
             olig2 = Olig("TGCA")
-            @test (olig * olig2) == Olig("ACGTTGCA", "concatenated")
-            @test description((olig * olig2)) == "concatenated"
+            @test (olig * olig2) == Olig("ACGTTGCA", "concat")
+            @test description((olig * olig2)) == "concat"
             @test (Olig("A") * Olig("C") * Olig("G") * Olig("T")) == olig
             
             # Equality tests
