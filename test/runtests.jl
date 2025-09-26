@@ -245,7 +245,7 @@ using JET
             subview = view1[2:3]
             @test String(subview) == "GT"
             @test description(subview) == "test"
-            @test subview isa AlignedOligs.OligView{AlignedOligs.OligView{Olig}}
+            @test subview isa AlignedOligs.OligView{Olig}
             @test n_deg_pos(subview) == 0
             @test n_unique_oligs(subview) == 1
             
@@ -253,7 +253,7 @@ using JET
             deg_subview = view2[2:3]
             @test String(deg_subview) == "GN"
             @test description(deg_subview) == "deg test"
-            @test deg_subview isa AlignedOligs.OligView{AlignedOligs.OligView{DegenerateOlig}}
+            @test deg_subview isa AlignedOligs.OligView{DegenerateOlig}
             @test n_deg_pos(deg_subview) == 1
             @test n_unique_oligs(deg_subview) == 4
         end

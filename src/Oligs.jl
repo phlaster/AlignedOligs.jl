@@ -53,7 +53,7 @@ end
 Base.String(olig::Olig) = olig.seq
 Base.String(olig::DegenerateOlig) = olig.seq
 Base.String(go::GappedOlig) = _build_gapped_string(go)
-Base.String(ov::OligView) = String(ov.parent)[ov.range]
+Base.String(ov::OligView) = String(parent(ov))[ov.range]
 
 Base.:(==)(o::AbstractOlig, s::AbstractString) = String(o) == s
 Base.:(==)(s::AbstractString, o::AbstractOlig) = o == s
@@ -87,7 +87,7 @@ Base.ncodeunits(olig::AbstractOlig) = length(olig)
 Base.codeunit(olig::Olig, i::Integer) = codeunit(olig.seq, i)
 Base.codeunit(olig::DegenerateOlig, i::Integer) = codeunit(olig.seq, i)
 Base.codeunit(go::GappedOlig, i::Integer) = UInt8(_char_at(go, i))
-Base.codeunit(ov::OligView, i::Integer) = codeunit(ov.parent, ov.range.start + i - 1)
+Base.codeunit(ov::OligView, i::Integer) = codeunit(parent(ov), ov.range.start + i - 1)
 
 function _char_at(go::GappedOlig, k::Integer)
     @boundscheck 1 <= k <= go.total_length || throw(BoundsError(go, k))
@@ -120,7 +120,7 @@ Base.isempty(olig::AbstractOlig) = length(olig) == 0
 description(olig::Olig) = olig.description
 description(olig::DegenerateOlig) = olig.description
 description(olig::GappedOlig) = olig.olig.description
-description(ov::OligView) = description(ov.parent)
+description(ov::OligView) = description(parent(ov))
 
 Olig(chars::Vector{Char}, description::AbstractString = "") = Olig(String(chars), description)
 
@@ -152,15 +152,16 @@ DegenerateOlig() = EMPTY_OLIG
 DegenerateOlig(chars::Vector{Char}, description::AbstractString = "") = DegenerateOlig(String(chars), description)
 DegenerateOlig(olig::AbstractOlig) = DegenerateOlig(String(olig), n_deg_pos(olig), n_unique_oligs(olig), description(olig))
 
-function Base.getindex(olig::T, r::UnitRange{Int}) where {T<:AbstractOlig}
+function Base.getindex(olig::AbstractOlig, r::UnitRange{Int})
     @boundscheck checkbounds(1:lastindex(olig), r)
-    OligView{T}(olig, r)
-end
-
-function Base.getindex(ov::OligView{T}, r::UnitRange{Int}) where {T<:AbstractOlig}
-    r0 = ov.range
-    @boundscheck checkbounds(1:lastindex(ov), r)
-    OligView{T}(p, r)
+    if olig isa OligView
+        adjusted_start = olig.range.start + r.start - 1
+        adjusted_range = adjusted_start:(adjusted_start + length(r) - 1)
+    else
+        adjusted_range = r
+    end
+    P = parent(olig)
+    return OligView{typeof(P)}(P, adjusted_range)
 end
 
 function Base.getindex(olig::T, i::Int) where {T<:AbstractOlig}
@@ -170,19 +171,19 @@ end
 
 hasgaps(::AbstractOlig) = false
 hasgaps(go::GappedOlig) = !isempty(go.gaps)
-hasgaps(ov::OligView{GappedOlig}) = error(123)
+hasgaps(ov::OligView) = hasgaps(parent(ov))
 
 n_unique_oligs(::AbstractOlig) = BigInt(1)
 n_unique_oligs(d::DegenerateOlig) = d.n_unique_oligs
-n_unique_oligs(ov::OligView{DegenerateOlig}) = DegenerateOlig(String(ov)).n_unique_oligs
+n_unique_oligs(ov::OligView) = hasgaps(ov) ? BigInt(1) : reduce(*, (IUPAC_COUNTS[base] for base in ov), init=BigInt(1))
 
 n_deg_pos(::AbstractOlig) = 0
 n_deg_pos(d::DegenerateOlig) = d.n_deg_pos
-n_deg_pos(ov::OligView{DegenerateOlig}) = DegenerateOlig(String(ov)).n_deg_pos
+n_deg_pos(ov::OligView) = hasgaps(ov) ? 0 : count(char -> char in DEGEN_BASES, ov)
 
 function Base.:*(o1::AbstractOlig, o2::AbstractOlig)
     if hasgaps(o1) || hasgaps(o2)
-        throw(ErrorException("Concatenation not implemented for gapped oligos"))
+        throw(ErrorException("Concatenation not implemented for gapped oligs"))
     end
     if n_deg_pos(o1) > 0 || n_deg_pos(o2) > 0
         return DegenerateOlig(String(o1) * String(o2), n_deg_pos(o1)+n_deg_pos(o2), n_unique_oligs(o1)*n_unique_oligs(o2), "concat")
@@ -301,7 +302,7 @@ function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
 end
 
 function Base.rand(rng::AbstractRNG, ov::OligView)
-    parent_olig = rand(rng, ov.parent)
+    parent_olig = rand(rng, parent(ov))
     return Olig(String(parent_olig)[ov.range], description(ov))
 end
 
@@ -321,12 +322,12 @@ function SeqFold.revcomp(go::GappedOlig)
     sort!(rev_gaps, by=first)
     return GappedOlig(rev_olig, rev_gaps)
 end
-SeqFold.revcomp(ov::OligView) = SeqFold.revcomp(ov.parent)[length(ov.parent) - ov.range.stop + 1 : length(ov.parent) - ov.range.start + 1]  # Reverse view
+SeqFold.revcomp(ov::OligView) = SeqFold.revcomp(parent(ov))[length(parent(ov)) - ov.range.stop + 1 : length(parent(ov)) - ov.range.start + 1]  # Reverse view
 
 SeqFold.complement(olig::Olig) = Olig(SeqFold.complement(olig.seq; table=DNA_COMP_TABLE_DEG))
 SeqFold.complement(olig::DegenerateOlig) = DegenerateOlig(SeqFold.complement(olig.seq; table=DNA_COMP_TABLE_DEG))
 SeqFold.complement(go::GappedOlig) = GappedOlig(SeqFold.complement(go.olig), copy(go.gaps))
-SeqFold.complement(ov::OligView) = SeqFold.complement(ov.parent)[ov.range]
+SeqFold.complement(ov::OligView) = SeqFold.complement(parent(ov))[ov.range]
 
 function SeqFold.gc_content(olig::AbstractOlig)::Float64
     if hasgaps(olig)
