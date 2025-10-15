@@ -9,8 +9,8 @@ end
 function Base.show(io::IO, olig::Olig)
     seq_display = _truncate_seq(String(olig))
     print(io, "Olig(\"", seq_display, "\", len=", length(olig))
-    if !isempty(olig.description)
-        print(io, ", desc=\"", olig.description, "\"")
+    if !isempty(description(olig))
+        print(io, ", desc=\"", description(olig), "\"")
     end
     print(io, ")")
 end
@@ -30,11 +30,11 @@ end
 function Base.show(io::IO, deg::DegenerateOlig)
     seq_display = _truncate_seq(String(deg))
     print(io, "DegenerateOlig(\"", seq_display, "\", len=", length(deg))
-    print(io, ", n_deg=", deg.n_deg_pos)
-    vars_str = deg.n_unique_oligs > 10000 ? ">10k" : string(deg.n_unique_oligs)
+    print(io, ", n_deg=", n_deg_pos(deg))
+    vars_str = n_unique_oligs(deg) > 10000 ? ">10k" : string(n_unique_oligs(deg))
     print(io, ", vars=", vars_str)
-    if !isempty(deg.description)
-        print(io, ", desc=\"", deg.description, "\"")
+    if !isempty(description(deg))
+        print(io, ", desc=\"", description(deg), "\"")
     end
     print(io, ")")
 end
@@ -43,13 +43,13 @@ function Base.show(io::IO, ::MIME"text/plain", deg::DegenerateOlig)
     println(io, "DegenerateOlig")
     println(io, "  Sequence: ", String(deg))
     println(io, "  Length: ", length(deg))
-    println(io, "  Degenerate positions: ", deg.n_deg_pos)
-    println(io, "  Unique variants: ", deg.n_unique_oligs)
+    println(io, "  Degenerate positions: ", n_deg_pos(deg))
+    println(io, "  Unique variants: ", n_unique_oligs(deg))
     print(io, "  Description: ")
-    if isempty(deg.description)
+    if isempty(description(deg))
         println(io, "(none)")
     else
-        println(io, "\"", deg.description, "\"")
+        println(io, "\"", description(deg), "\"")
     end
 end
 
@@ -57,23 +57,23 @@ function Base.show(io::IO, go::GappedOlig)
     seq_display = _truncate_seq(String(go))
     print(io, "GappedOlig(\"", seq_display, "\", len=", length(go))
     print(io, ", gaps=", length(go.gaps))
-    if !isempty(go.description)
-        print(io, ", desc=\"", go.description, "\"")
+    if !isempty(description(go))
+        print(io, ", desc=\"", description(go), "\"")
     end
     print(io, ")")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", go::GappedOlig)
-    println(io, "GappedOlig")
+    println(io, typeof(go))
     println(io, "  Gapped sequence: ", String(go))
     println(io, "  Length (with gaps): ", length(go))
-    println(io, "  Underlying Olig: ", go.olig)
-    println(io, "  Gaps: ", go.gaps)
+    println(io, "  Underlying Olig: ", parent(go))
+    println(io, "  Gaps: ", length(go.gaps))
     print(io, "  Description: ")
-    if isempty(go.description)
+    if isempty(description(go))
         println(io, "(none)")
     else
-        println(io, "\"", go.description, "\"")
+        println(io, "\"", description(go), "\"")
     end
 end
 
