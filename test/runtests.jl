@@ -537,6 +537,94 @@ using Random
                 no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int,Int}[])
                 @test SeqFold.tm(no_gap_go, conditions=:pcr).mean == SeqFold.tm("ACGT", conditions=:pcr)
             end
+
+            @testset "Boundary Indexing and Slicing" begin
+                # Single-position slices
+                olig = Olig("ACGT", "single")
+                @test olig[1:1] == "A"
+                @test olig[end:end] == "T"
+                deg_olig = DegenerateOlig("ACGN", "deg single")
+                @test deg_olig[1:1] == "A"
+                @test deg_olig[end:end] == "N"
+                go = GappedOlig(Olig("ACGT"), [2=>1])
+                @test go[2:2] == "-"  # Single gap position
+                @test go[3:3] == "C"  # Single non-gap position
+
+                # Negative step ranges
+                @test olig[4:-1:1] == "TGCA"
+                @test deg_olig[4:-1:1] == "NGCA"
+                @test go[5:-1:1] == "TGC-A"  # Includes gap
+            end
+
+            @testset "Degenerate Base Edge Cases" begin
+                # All degenerate bases
+                all_deg = DegenerateOlig("NNNNNN", "all deg")
+                @test n_deg_pos(all_deg) == 6
+                @test n_unique_oligs(all_deg) == 4^6  # 4096
+                @test length(collect(nondegens(all_deg))) == 4^6
+                @test all(length(ol) == 6 for ol in Iterators.take(nondegens(all_deg), 10))
+
+                # Mixed degenerate/non-degenerate
+                mixed_deg = DegenerateOlig("ACGRYN", "mixed")
+                @test n_deg_pos(mixed_deg) == 3  # R, Y, N
+                @test n_unique_oligs(mixed_deg) == 2 * 2 * 4  # 16
+                @test Set(String.(collect(nondegens(mixed_deg)))) ⊆ Set([String(['A','C','G',d,e,f]) for d in "AG" for e in "CT" for f in "ACGT"])
+            end
+
+            @testset "Error Handling for Invalid Inputs" begin
+                # Invalid degenerate codes
+                @test_throws ErrorException DegenerateOlig("ACGTZ")  # Z not in ALL_BASES
+                @test_throws ErrorException DegenerateOlig("ACG#")  # Non-IUPAC character
+                @test_throws ArgumentError GappedOlig(Olig("ACGT"), [2=>-1])  # Negative gap length
+            end
+
+            @testset "SeqFold Interoperability" begin
+                # revcomp for OligView
+                olig = Olig("ACGT", "revcomp test")
+                ov = olig[2:4]
+                @test SeqFold.revcomp(ov) == "ACG"
+                @test SeqFold.revcomp(ov) isa OligView{Olig}
+                deg_olig = DegenerateOlig("ACGN", "deg revcomp")
+                deg_ov = deg_olig[2:4]
+                @test SeqFold.revcomp(deg_ov) == "NCG"
+                @test SeqFold.revcomp(deg_ov) isa OligView{DegenerateOlig}
+
+                # complement for degenerate sequences
+                @test SeqFold.complement(deg_olig) == "TGCN"
+                @test SeqFold.complement(deg_olig) isa DegenerateOlig
+                @test n_deg_pos(SeqFold.complement(deg_olig)) == 1
+                @test n_unique_oligs(SeqFold.complement(deg_olig)) == 4
+            end
+
+            @testset "Long Sequences and Many Gaps" begin
+                # Long sequence
+                long_olig = Olig("A"^100, "long")
+                @test length(long_olig) == 100
+                @test String(long_olig[50:60]) == "A"^11
+                @test SeqFold.gc_content(long_olig) ≈ 0.0
+
+                # Many gaps
+                gaps = [i=>1 for i in 1:10:91]  # Gaps every 10 positions
+                go_long = GappedOlig(long_olig, gaps)
+                @test length(go_long) == 110  # 100 bases + 10 gaps
+                @test go_long[20:25] == "AAA-AA"
+                @test n_deg_pos(go_long) == 0
+                @test n_unique_oligs(go_long) == 1
+            end
+
+            @testset "Conversion Edge Cases" begin
+                # OligView to Olig/DegenerateOlig
+                ov = Olig("ACGT")[2:3]
+                @test convert(Olig, ov) == Olig("CG")
+                deg_ov = DegenerateOlig("ACGN")[2:4]
+                @test convert(DegenerateOlig, deg_ov) == DegenerateOlig("CGN")
+                @test_throws InexactError convert(Olig, DegenerateOlig("NN")[1:2])
+
+                # GappedOlig to string and back
+                go = GappedOlig(Olig("ACGT"), [2=>1])
+                go_str = String(go)
+                @test GappedOlig(go_str) == go
+            end
             
         end
     end
