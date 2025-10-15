@@ -2,6 +2,7 @@ using AlignedOligs
 using Test
 using Aqua
 using JET
+using Random
 
 @testset "AlignedOligs.jl" begin
     # @testset "Code quality (Aqua.jl)" begin
@@ -306,7 +307,7 @@ using JET
             olig = Olig(seq, "test")
             go = GappedOlig(olig, [3=>2, 5=>1])
             @test go isa GappedOlig{Olig}
-            @test String(go) == "AC--GT-ACGT"
+            @test String(go) == gapped_seq
             @test length(go) == 11
             @test parent(go) === olig
             @test go.gaps == [3=>2, 5=>1]
@@ -319,8 +320,8 @@ using JET
             # Construction from string
             go_str = GappedOlig(gapped_seq, "test")
             @test go_str isa GappedOlig{Olig}
-            @test String(go_str) == "AC--GT-ACGT"
-            @test go_str.parent == Olig(seq, "test")
+            @test String(go_str) == gapped_seq
+            @test parent(go_str) == Olig(seq, "test")
             @test go_str.gaps == [3=>2, 5=>1]
             @test length(go_str) == 11
             
@@ -342,7 +343,7 @@ using JET
             go_deg_str = GappedOlig(gapped_deg_seq, "deg test")
             @test go_deg_str isa GappedOlig{DegenerateOlig}
             @test String(go_deg_str) == gapped_deg_seq
-            @test go_deg_str.parent == DegenerateOlig(deg_seq, "deg test")
+            @test parent(go_deg_str) == DegenerateOlig(deg_seq, "deg test")
             @test go_deg_str.gaps == [3=>2, 5=>1]
             
             # Invalid gap positions
@@ -381,7 +382,7 @@ using JET
             @test String(go_view) == "C--GN-"
             @test n_deg_pos(go_view) == 1
             @test n_unique_oligs(go_view) == 4
-            @test collect(nondegens(go_view)) == [Olig("C--GA-"), Olig("C--GC-"), Olig("C--GG-"), Olig("C--GT-")]
+            @test collect(nondegens(go_view)) == GappedOlig.(["C--GA-", "C--GC-", "C--GG-", "C--GT-"])
             
             # Gaps at start/end
             go_start = GappedOlig(olig, [1=>2])
@@ -396,155 +397,147 @@ using JET
             # Complex slicing
             nested_view = go[2:8][2:5]
             @test nested_view isa OligView{GappedOlig{Olig}}
-            @test String(nested_view) == "C-GT"
-            @test String(go[4:5]) == "-G"
-            @test String(go[6:8]) == "T-A"
+            @test nested_view == "--GT"
+            @test go[4:5] == "-G"
+            @test go[7:7] == "-"
             
             # Concatenation edge cases
             @test_throws ErrorException go * go
             go_view = go[1:3]
-            @test String(go_view * Olig("CG")) == "AC-CG"
-            @test (go_view * Olig("CG")) isa Olig
-            go_deg_view = go_deg[1:3]
-            @test String(go_deg_view * Olig("CG")) == "AC-CG"
-            @test (go_deg_view * Olig("CG")) isa Olig
+            @test_throws ErrorException go_view * Olig("CG")
             
             # SeqFold methods
-            @test String(SeqFold.revcomp(go)) == "ACGT-AC--GT"
+            @test SeqFold.revcomp(go) == "ACGT-AC--GT"
             @test SeqFold.revcomp(go) isa GappedOlig{Olig}
-            @test SeqFold.revcomp(go).gaps == [3=>1, 5=>2]
-            @test String(SeqFold.complement(go)) == "TG--CA-TGCA"
-            @test SeqFold.complement(go).gaps == [3=>2, 5=>1]
+            @test SeqFold.revcomp(go).gaps == [length(go)-a-1 => b for (a,b) in reverse(go.gaps)]
+            @test SeqFold.complement(go) == "TG--CA-TGCA"
+            @test SeqFold.complement(go).gaps == go.gaps
             @test SeqFold.gc_content(go) ≈ SeqFold.gc_content(olig)
             @test_throws ErrorException SeqFold.fold(go)
             @test_throws ErrorException SeqFold.dg(go)
             @test_throws ErrorException SeqFold.tm(go)
             
             # Iteration
-            @test collect(go) == ['A', 'C', '-', '-', 'G', 'T', '-', 'A', 'C', 'G', 'T']
-            @test collect(go_deg) == ['A', 'C', '-', '-', 'G', 'N', '-', 'R', 'T']
-            empty_iter = GappedOlig(Olig(""), [])
+            @test collect(go) == collect(gapped_seq)
+            @test collect(go_deg) == collect(gapped_deg_seq)
+            empty_iter = GappedOlig(Olig(""), Pair{Int,Int}[])
             @test iterate(empty_iter) === nothing
             
             # Nondegens for degenerate parent
-            @test collect(nondegens(go_deg)) == [go_deg]
             @test collect(nondegens(go)) == [go]
+            @test collect(nondegens(go_deg)) == GappedOlig.(["AC--GA-AT", "AC--GA-GT", "AC--GC-AT", "AC--GC-GT", "AC--GG-AT", "AC--GG-GT", "AC--GT-AT", "AC--GT-GT"])
         end
 
-        # @testset "Extra" begin
-        #     @testset "GappedOlig with DegenerateOlig" begin
-        #         deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
-        #         gaps = [3=>2, 6=>1]
-        #         go = GappedOlig(deg_olig, gaps)
-        #         @test go isa GappedOlig{DegenerateOlig}
-        #         @test String(go) == "AC--GN-RT"  # 6 bases + 3 gaps = 9 length
-        #         @test go.parent == deg_olig
-        #         @test go.gaps == gaps
-        #         @test length(go) == 9
-        #         @test n_deg_pos(go) == 2  # N and R from parent
-        #         @test n_unique_oligs(go) == 8  # N=4, R=2
-        #         @test collect(go) == ['A','C','-','-','G','N','-','R','T']
-        #         @test String(go[2:7]) == "C--GN-"  # Includes gaps and degenerate
-        #         @test String(go[8:end]) == "RT"
-        #         @test go[3] == '-'
-        #         @test go[6] == 'N'
-        #         go_view = go[3:6]
-        #         @test go_view isa OligView{GappedOlig{DegenerateOlig}}
-        #         @test String(go_view) == "--GN"
-        #         @test n_deg_pos(go_view) == 1
-        #         @test n_unique_oligs(go_view) == 4
-        #         @test collect(nondegens(go_view)) == [Olig("--GA"), Olig("--GC"), Olig("--GG"), Olig("--GT")]
+        @testset "Extra" begin
+            @testset "GappedOlig with DegenerateOlig" begin
+                deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
+                gaps = [3=>2, 5=>1]
+                go = GappedOlig(deg_olig, gaps)
+                @test go isa GappedOlig{DegenerateOlig}
+                @test String(go) == "AC--GN-RT"  # 6 bases + 3 gaps = 9 length
+                @test parent(go) == deg_olig
+                @test go.gaps == gaps
+                @test length(go) == 9
+                @test n_deg_pos(go) == 2  # N and R from parent
+                @test n_unique_oligs(go) == 8  # N=4, R=2
+                @test collect(go) == ['A','C','-','-','G','N','-','R','T']
+                @test String(go[2:7]) == "C--GN-"
+                @test String(go[8:end]) == "RT"
+                @test go[3] == '-'
+                @test go[6] == 'N'
+                go_view = go[3:6]
+                @test go_view isa OligView{GappedOlig{DegenerateOlig}}
+                @test String(go_view) == "--GN"
+                @test n_deg_pos(go_view) == 1
+                @test n_unique_oligs(go_view) == 4
+                @test collect(nondegens(go_view)) == GappedOlig.(["--GA", "--GC", "--GG", "--GT"])
 
-        #         deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
-        #         # Gaps at start
-        #         go_start = GappedOlig(deg_olig, [1=>2])
-        #         @test String(go_start) == "--ACGNRT"
-        #         @test length(go_start) == 8
-        #         @test go_start[1] == '-' && go_start[2] == '-' && go_start[3] == 'A'
-        #         # Gaps at end
-        #         go_end = GappedOlig(deg_olig, [7=>2])
-        #         @test String(go_end) == "ACGNRT--"
-        #         @test length(go_end) == 8
-        #         @test go_end[6] == 'T' && go_end[7] == '-' && go_end[8] == '-'
-        #         # Multiple gaps with degenerate bases
-        #         go_multi = GappedOlig(deg_olig, [2=>1, 4=>1, 6=>1])
-        #         @test String(go_multi) == "A-C-G-N-RT"
-        #         @test length(go_multi) == 9
-        #         @test collect(go_multi) == ['A', '-', 'C', '-', 'G', '-', 'N', 'R', 'T']
-        #         # Slice including partial gap
-        #         @test String(go_multi[2:5]) == "-C-G"
-        #         # Gap-only slice
-        #         go = GappedOlig(deg_olig, [3=>2, 6=>1])
-        #         @test String(go[3:4]) == "--"
-        #     end
+                deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
+                # Gaps at start
+                go_start = GappedOlig(deg_olig, [1=>2])
+                @test String(go_start) == "--ACGNRT"
+                @test length(go_start) == 8
+                @test go_start[1] == '-' && go_start[2] == '-' && go_start[3] == 'A'
+                # Gaps at end
+                go_end = GappedOlig(deg_olig, [7=>2])
+                @test String(go_end) == "ACGNRT--"
+                @test length(go_end) == 8
+                @test go_end[6] == 'T' && go_end[7] == '-' && go_end[8] == '-'
+                # Multiple gaps with degenerate bases
+                go_multi = GappedOlig(deg_olig, [2=>1, 3=>1, 4=>1])
+                @test String(go_multi) == "A-C-G-NRT"
+                @test length(go_multi) == 9
+                @test collect(go_multi) == ['A', '-', 'C', '-', 'G', '-', 'N', 'R', 'T']
+                # Slice including partial gap
+                @test String(go_multi[2:5]) == "-C-G"
+                # Gap-only slice
+                go = GappedOlig(deg_olig, [3=>2, 6=>1])
+                @test String(go[3:4]) == "--"
+            end
 
-        #     @testset "Random Sampling" begin
-        #         deg_olig = DegenerateOlig("ACRN", "rand test")
-        #         rng = Random.MersenneTwister(42)
-        #         rand_olig = rand(rng, deg_olig)
-        #         @test rand_olig isa Olig
-        #         @test String(rand_olig) in ["ACAA", "ACAG", "ACGA", "ACGG"]
-        #         @test description(rand_olig) == "rand test"
-        #         deg_view = deg_olig[2:4]
-        #         rand_view = rand(rng, deg_view)
-        #         @test rand_view isa Olig
-        #         @test String(rand_view) in ["CAA", "CAG", "CGA", "CGG"]
-        #         @test description(rand_view) == "rand test"
-        #         # Test multiple samples to ensure coverage
-        #         samples = Set(String(rand(rng, deg_olig)) for _ in 1:100)
-        #         @test length(samples) > 1  # Likely to hit multiple variants
-        #     end
+            @testset "Random Sampling" begin
+                deg_olig = DegenerateOlig("ACRN", "rand test")
+                rng = Random.MersenneTwister(42)
+                rand_olig = rand(rng, deg_olig)
+                @test rand_olig isa Olig
+                @test String(rand_olig) in String.(nondegens(deg_olig))
+                @test description(rand_olig) == "rand test"
+                deg_view = deg_olig[2:4]
+                rand_view = rand(rng, deg_view)
+                @test rand_view isa Olig
+                @test String(rand_view) in ["CAA", "CAG", "CGA", "CGG"]
+                @test description(rand_view) == "rand test"
+                # Test multiple samples to ensure coverage
+                samples = Set(String(rand(rng, deg_olig)) for _ in 1:100)
+                @test length(samples) > 1  # Likely to hit multiple variants
+            end
 
-        #     @testset "Complex Slicing for GappedOlig" begin
-        #         olig = Olig("ACGTACGT", "slice test")
-        #         go = GappedOlig(olig, [3=>2, 7=>1])
-        #         @test String(go) == "AC--GT-ACGT"
-        #         @test String(go[3:4]) == "--"  # Only gaps
-        #         @test String(go[4:5]) == "-G"  # Partial gap
-        #         @test String(go[6:8]) == "T-A"  # Gap in middle
-        #         @test String(go[1:2]) == "AC"  # Before gaps
-        #         @test String(go[end:end]) == "T"  # Single position
-        #         nested_view = go[2:8][2:5]
-        #         @test nested_view isa OligView{GappedOlig{Olig}}
-        #         @test String(nested_view) == "--GT"  # Nested slice
-        #         deg_olig = DegenerateOlig("ACGNRT", "deg slice")
-        #         go_deg = GappedOlig(deg_olig, [3=>2])
-        #         @test String(go_deg[2:5]) == "C--G"
-        #         @test String(go_deg[3:4]) == "--"
-        #     end
+            @testset "Complex Slicing for GappedOlig" begin
+                olig = Olig("ACGTACGT", "slice test")
+                go = GappedOlig(olig, [3=>2, 5=>1])
+                @test String(go) == "AC--GT-ACGT"
+                @test String(go[3:4]) == "--"  # Only gaps
+                @test String(go[4:5]) == "-G"  # Partial gap
+                @test String(go[6:8]) == "T-A"  # Gap in middle
+                @test String(go[1:2]) == "AC"  # Before gaps
+                @test String(go[end:end]) == "T"  # Single position
+                nested_view = go[2:8][2:5]
+                @test nested_view isa OligView{GappedOlig{Olig}}
+                @test String(nested_view) == "--GT"  # Nested slice
+                deg_olig = DegenerateOlig("ACGNRT", "deg slice")
+                go_deg = GappedOlig(deg_olig, [3=>2])
+                @test String(go_deg[2:5]) == "C--G"
+                @test String(go_deg[3:4]) == "--"
+            end
 
-        #     @testset "Concatenation Edge Cases" begin
-        #         go = GappedOlig(Olig("ACGT", "test"), [3=>1])
-        #         @test_throws ErrorException go * go  # Gapped concatenation not supported
-        #         go_view = go[1:3]
-        #         @test go_view isa OligView{GappedOlig{Olig}}
-        #         @test String(go_view * Olig("CG")) == "AC-CG"
-        #         @test (go_view * Olig("CG")) isa Olig
-        #         deg_olig = DegenerateOlig("ACN")
-        #         go_deg = GappedOlig(deg_olig, [2=>1])
-        #         go_deg_view = go_deg[1:3]
-        #         @test String(go_deg_view * Olig("CG")) == "A-CN-CG"
-        #         @test (go_deg_view * Olig("CG")) isa DegenerateOlig
-        #         @test n_deg_pos(go_deg_view * Olig("CG")) == 1
-        #         @test n_unique_oligs(go_deg_view * Olig("CG")) == 4
-        #     end
+            @testset "Concatenation Edge Cases" begin
+                go = GappedOlig(Olig("ACGT", "test"), [3=>1])
+                @test_throws ErrorException go * go  # Gapped concatenation not supported
+                go_view = go[1:3]
+                @test go_view isa OligView{GappedOlig{Olig}}
+                @test_throws ErrorException go_view * Olig("CG")
+                deg_olig = DegenerateOlig("ACN")
+                go_deg = GappedOlig(deg_olig, [2=>1])
+                go_deg_view = go_deg[1:3]
+                @test_throws ErrorException go_deg_view * Olig("CG")
+            end
 
-        #     @testset "SeqFold Methods" begin
-        #         deg_olig = DegenerateOlig("ACGN", "tm test")
-        #         tm_result = SeqFold.tm(deg_olig, conditions=:pcr)
-        #         @test tm_result.mean isa Float64
-        #         @test tm_result.conf[1] <= tm_result.mean <= tm_result.conf[2]
-        #         @test all(x in ["ACGA", "ACGC", "ACGG", "ACGT"] for x in nondegens(deg_olig))
-        #         deg_view = deg_olig[2:4]
-        #         tm_view = SeqFold.tm(deg_view, conditions=:pcr)
-        #         @test tm_view.mean isa Float64
-        #         @test tm_view.conf[1] <= tm_view.mean <= tm_view.conf[2]
-        #         @test SeqFold.gc_content(deg_olig) ≈ (0.0 + 1.0 + 0.5 + 0.5) / 4  # A,C,G,N weights
-        #         @test SeqFold.gc_content(deg_view) ≈ (1.0 + 0.5 + 0.0) / 3  # C,G,N
-        #         no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int,Int}[])
-        #         @test SeqFold.tm(no_gap_go, conditions=:pcr).mean == SeqFold.tm("ACGT", conditions=:pcr)
-        #     end
+            @testset "SeqFold Methods" begin
+                deg_olig = DegenerateOlig("ACGN", "tm test")
+                tm_result = SeqFold.tm(deg_olig, conditions=:pcr)
+                @test tm_result.mean isa Float64
+                @test tm_result.conf[1] <= tm_result.mean <= tm_result.conf[2]
+                @test all(x in ["ACGA", "ACGC", "ACGG", "ACGT"] for x in nondegens(deg_olig))
+                deg_view = deg_olig[2:4]
+                tm_view = SeqFold.tm(deg_view, conditions=:pcr)
+                @test tm_view.mean isa Float64
+                @test tm_view.conf[1] <= tm_view.mean <= tm_view.conf[2]
+                @test SeqFold.gc_content(deg_olig) ≈ (0.0 + 1.0 + 1.0 + 0.5) / 4  # A,C,G,N weights
+                @test SeqFold.gc_content(deg_view) ≈ (1.0 + 1.0 + 0.5) / 3  # C,G,N
+                no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int,Int}[])
+                @test SeqFold.tm(no_gap_go, conditions=:pcr).mean == SeqFold.tm("ACGT", conditions=:pcr)
+            end
             
-        # end
+        end
     end
 end

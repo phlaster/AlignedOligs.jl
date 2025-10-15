@@ -171,6 +171,7 @@ Base.:(==)(o::AbstractOlig, s::SubString{<:Base.AnnotatedString}) = String(o) ==
 Base.:(==)(s::SubString{<:Base.AnnotatedString}, o::AbstractOlig) = o == s
 Base.:(==)(o::AbstractOlig, s::Base.AnnotatedString) = String(o) == String(s)
 Base.:(==)(s::Base.AnnotatedString, o::AbstractOlig) = o == s
+Base.:(==)(a::GappedOlig, b::GappedOlig) = (a.parent == b.parent) && (a.gaps == b.gaps) && (a.total_length == b.total_length)
 
 function _build_gapped_string(go::GappedOlig)
     parent_len = length(parent(go))
@@ -264,8 +265,11 @@ description(olig::AbstractOlig) = parent(olig).description
 description(ov::OligView{<:GappedOlig}) = parent(parent(ov)).description
 
 hasgaps(::AbstractOlig) = false
+hasgaps(ov::OligView{Olig}) = false
+hasgaps(ov::OligView{DegenerateOlig}) = false
 hasgaps(go::GappedOlig) = !isempty(go.gaps)
-hasgaps(ov::OligView) = hasgaps(parent(ov))
+hasgaps(ov::OligView) = any(c == '-' for c in ov)
+
 
 n_unique_oligs(::AbstractOlig) = BigInt(1)
 n_unique_oligs(d::DegenerateOlig) = d.n_unique_oligs
@@ -335,16 +339,23 @@ Base.length(iter::NonDegenIterator) = iter.n_variants
 Base.eltype(::Type{<:NonDegenIterator}) = Olig
 
 nondegens(olig::Olig) = (olig,)
-nondegens(go::GappedOlig) = (go,)
+nondegens(go::GappedOlig{Olig}) = (go,)
 nondegens(olig::DegenerateOlig) = NonDegenIterator(olig, n_unique_oligs(olig))
+function nondegens(go::GappedOlig{DegenerateOlig})
+    (GappedOlig(olig, go.gaps) for olig in nondegens(go.parent))
+end
 function nondegens(ov::OligView)
+    str = String(ov)
+    descr = description(ov)
     if hasgaps(ov)
-        return (ov,)
+        go = GappedOlig(str, descr)
+        return nondegens(go)
     else
-        deg_olig = DegenerateOlig(String(ov), description(ov))
-        return NonDegenIterator(deg_olig, n_unique_oligs(ov))
+        deg_olig = DegenerateOlig(str, descr)
+        return nondegens(deg_olig)
     end
 end
+
 Base.rand(rng::AbstractRNG, olig::Olig) = olig
 
 function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
