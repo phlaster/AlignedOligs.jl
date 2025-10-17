@@ -86,7 +86,7 @@ function GappedOlig(seq::AbstractString, descr::AbstractString="")
     parent_seq = filter(c -> c != '-', seq)
     underlying_olig = try
         Olig(parent_seq, descr)
-    catch
+    catch ErrorException
         DegenerateOlig(parent_seq, descr)
     end
     gaps = Pair{Int,Int}[]

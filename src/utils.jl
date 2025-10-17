@@ -48,3 +48,20 @@ const DNA_COMP_TABLE_DEG = let
     UInt8('-')
     [_comp_dna_deg(UInt8(i)) for i in 0:255]
 end
+
+const IUPAC_PROBS = let
+    d = Dict{Char, Vector{Float64}}()
+    bases = "ACGT"
+    for (k, v) in IUPAC_B2V
+        probs = zeros(Float64, 4)
+        for base in v
+            idx = findfirst(==(base), bases)
+            probs[idx] += 1.0
+        end
+        if !isempty(v)
+            probs ./= length(v)
+        end
+        d[k] = probs
+    end
+    d
+end

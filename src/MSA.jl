@@ -4,7 +4,8 @@ struct MSA <: AbstractMSA
     seqs::Vector{GappedOlig}
     base_count::Matrix{Float64}  # 4 x L, proportions of A=1, C=2, G=3, T=4
 
-        function MSA(seqs::Vector{GappedOlig})
+    function MSA(seqs::Vector{<:GappedOlig}; gap_tolerance::Real=0.0)
+        0 ≤ gap_tolerance < 1 || throw(ArgumentError("gap_tolerance must be in [0,1)"))
         if isempty(seqs)
             return new(seqs, zeros(4, 0))
         end
@@ -16,21 +17,42 @@ struct MSA <: AbstractMSA
         base_count = zeros(4, L)
 
         for j in 1:L
-            counts = zeros(Int, 4)
-            num_non_gaps = 0
+            counts = zeros(4)
+            num_valid = 0
             for s in seqs
                 c = s[j]
                 if c != '-'
-                    idx = findfirst(==(c), "ACGT")
-                    if !isnothing(idx)
-                        counts[idx] += 1
-                        num_non_gaps += 1
-                    end
+                    num_valid += 1
+                    probs = get(IUPAC_PROBS, c, zeros(4))  # Fallback to zeros if unknown
+                    counts .+= probs
                 end
             end
-            if num_non_gaps > 0
-                base_count[:, j] = counts / num_non_gaps
+            if num_valid > 0
+                base_count[:, j] = counts / num_valid
             end
+        end
+
+        if gap_tolerance > 0
+            new_seqs = Vector{GappedOlig}(undef, n)
+            for i in 1:n
+                seq_chars = Char[]
+                for j in 1:L
+                    p = base_count[:, j]
+                    c = seqs[i][j]
+                    if c != '-' && sum(p) > 0
+                        idx = findfirst(==(c), "ACGT")
+                        if !isnothing(idx) && p[idx] < gap_tolerance
+                            push!(seq_chars, '-')
+                        else
+                            push!(seq_chars, c)
+                        end
+                    else
+                        push!(seq_chars, c)
+                    end
+                end
+                new_seqs[i] = GappedOlig(String(seq_chars), description(seqs[i]))
+            end
+            return MSA(new_seqs)  # Recurse with default gap_tolerance=0
         end
 
         return new(seqs, base_count)
@@ -39,8 +61,8 @@ end
 
 struct MSAView <: AbstractMSA
     parent::AbstractMSA
-    rows::UnitRange{Int}  # absolute indices relative to root MSA
-    cols::UnitRange{Int}  # absolute indices relative to root MSA
+    rows::UnitRange{Int}
+    cols::UnitRange{Int}
 end
 
 function root(msa::MSA)
@@ -51,64 +73,8 @@ function root(v::MSAView)
     return root(v.parent)
 end
 
-function MSA(fasta::String; aligned::Bool=true, gap_tolerance::Float64=0.5)
-    0.0 < gap_tolerance < 1.0 || throw(ArgumentError("gap_tolerance must be in (0,1)"))
-
-    seqs_desc = []
-    FastaReader(fasta) do fr
-        for (i, (desc, seq)) in enumerate(fr)
-            desc = isempty(desc) ? "seq$i" : desc
-            push!(seqs_desc, (seq, desc))
-        end
-    end
-
-    if !aligned
-        mktemp() do input_path, io
-            writefasta(io, seqs_desc; check_description=false)
-            aligned_output = read(`$(MAFFT_jll.mafft()) $input_path`, String)
-            seqs_desc = []
-            # Read directly from IOBuffer
-            FastaReader(IOBuffer(aligned_output)) do fr
-                for (desc, seq) in fr
-                    push!(seqs_desc, (seq, desc))
-                end
-            end
-        end
-    end
-
-    gapped_oligs = [GappedOlig(seq, desc) for (seq, desc) in seqs_desc]
-    msa = MSA(gapped_oligs)
-
-    # Apply gap_tolerance to filter low-abundance nucleotides
-    if gap_tolerance > 0
-        L = width(msa)
-        new_seqs = Vector{GappedOlig}(undef, nseqs(msa))
-        for i in 1:nseqs(msa)
-            seq_chars = Char[]
-            for j in 1:L
-                p = msa.base_count[:, j]
-                c = msa.seqs[i][j]
-                if c != '-' && sum(p) > 0
-                    idx = findfirst(==('A'), "ACGT")  # Example, replace with actual base logic
-                    if p[idx] < gap_tolerance
-                        push!(seq_chars, '-')  # Replace low-abundance bases with gaps
-                    else
-                        push!(seq_chars, c)
-                    end
-                else
-                    push!(seq_chars, c)
-                end
-            end
-            new_seqs[i] = GappedOlig(String(seq_chars), description(msa.seqs[i]))
-        end
-        return MSA(new_seqs)
-    end
-
-    return msa
-end
-
-function MSA(fasta::String; aligned::Bool=true)
-    seqs_desc = Tuple{String,String}[]
+function MSA(fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0)
+    seqs_desc = Tuple{String, String}[]
     FastaReader(fasta) do fr
         for (i, (desc, seq)) in enumerate(fr)
             desc = isempty(desc) ? "seq$i" : desc
@@ -117,31 +83,69 @@ function MSA(fasta::String; aligned::Bool=true)
     end
 
     if !aligned
-        output_path = fasta * ".aln"
-        mktemp() do input_path, _
-            open(input_path, "w") do io
-                FastaWriter(io) do fw
-                    for (desc, seq) in seqs_desc
-                        writeentry(fw, desc, seq)
-                    end
+        mktemp() do input_path, io
+            FastaWriter(io) do fw
+                for (desc, seq) in seqs_desc
+                    writeentry(fw, desc, seq)
                 end
             end
+            close(io)
             aligned_output = read(`$(MAFFT_jll.mafft()) $input_path`, String)
-            open(output_path, "w") do io
-                write(io, aligned_output)
-            end
-        end
-        seqs_desc = Tuple{String,String}[]
-        FastaReader(output_path) do fr
-            for (desc, seq) in fr
-                push!(seqs_desc, (seq, desc))
+            seqs_desc = Tuple{String, String}[]
+            FastaReader(IOBuffer(aligned_output)) do fr
+                for (desc, seq) in fr
+                    push!(seqs_desc, (desc, seq))
+                end
             end
         end
     end
 
     # Validate sequences
+    allowed = aligned ? (NON_DEGEN_BASES..., '-', 'N') : (NON_DEGEN_BASES..., 'N')
     for (desc, seq) in seqs_desc
-        allowed = aligned ? "ACGT-" : "ACGT"
+        upper_seq = uppercase(seq)
+        if !all(c -> c in allowed, upper_seq)
+            invalid_chars = setdiff(unique(upper_seq), collect(allowed))
+            throw(ArgumentError("Sequence '$desc' contains invalid characters: $(join(invalid_chars, ", ")). Only $(join(collect(allowed), ", ")) allowed."))
+        end
+    end
+
+    gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in seqs_desc]
+    return MSA(gapped_oligs; gap_tolerance=gap_tolerance)
+end
+
+function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0)
+    seqs_desc = Tuple{String, String}[]
+    FastaReader(fasta) do fr
+        for (i, (desc, seq)) in enumerate(fr)
+            if predicate(desc)
+                desc = isempty(desc) ? "seq$i" : desc
+                push!(seqs_desc, (seq, desc))
+            end
+        end
+    end
+
+    if !aligned
+        mktemp() do input_path, io
+            FastaWriter(io) do fw
+                for (desc, seq) in seqs_desc
+                    writeentry(fw, desc, seq)
+                end
+            end
+            close(io)
+            aligned_output = read(`$(MAFFT_jll.mafft()) $input_path`, String)
+            seqs_desc = Tuple{String, String}[]
+            FastaReader(IOBuffer(aligned_output)) do fr
+                for (desc, seq) in fr
+                    push!(seqs_desc, (seq, desc))
+                end
+            end
+        end
+    end
+
+    # Validate sequences (same as above)
+    allowed = aligned ? "ACGT-" : "ACGT"
+    for (seq, desc) in seqs_desc
         upper_seq = uppercase(seq)
         if !all(c -> c in allowed, upper_seq)
             invalid_chars = setdiff(unique(upper_seq), collect(allowed))
@@ -150,42 +154,35 @@ function MSA(fasta::String; aligned::Bool=true)
     end
 
     gapped_oligs = [GappedOlig(seq, desc) for (seq, desc) in seqs_desc]
-    return MSA(gapped_oligs)
+    return MSA(gapped_oligs; gap_tolerance=gap_tolerance)
 end
 
-# Slicing
 function Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::UnitRange{Int})
     root_msa = root(msa)
-    abs_rows = if isa(msa, MSA)
-        rows
-    else
-        msa.rows.first + rows.first - 1 : msa.rows.first + rows.last - 1
-    end
-    abs_cols = if isa(msa, MSA)
-        cols
-    else
-        msa.cols.first + cols.first - 1 : msa.cols.first + cols.last - 1
-    end
+    abs_rows = isa(msa, MSA) ? rows : msa.rows.start + rows.start - 1 : msa.rows.start + rows.stop - 1
+    abs_cols = isa(msa, MSA) ? cols : msa.cols.start + cols.start - 1 : msa.cols.start + cols.stop - 1
     return MSAView(root_msa, abs_rows, abs_cols)
 end
-
 Base.getindex(msa::AbstractMSA, rows::Colon, cols::UnitRange{Int}) = msa[1:nseqs(msa), cols]
-Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::Colon) = msa[rows, 1:width(msa)]
-Base.getindex(msa::AbstractMSA, rows::Colon, cols::Colon) = msa[1:nseqs(msa), 1:width(msa)]
+Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::Colon) = msa[rows, 1:length(msa)]
+Base.getindex(msa::AbstractMSA, rows::Colon, cols::Colon) = msa[1:nseqs(msa), 1:length(msa)]
 
-# Accessors
 nseqs(msa::MSA) = length(msa.seqs)
 nseqs(v::MSAView) = length(v.rows)
 
-width(msa::MSA) = size(msa.base_count, 2)
-width(v::MSAView) = length(v.cols)
+Base.length(msa::MSA) = size(msa.base_count, 2)
+Base.length(v::MSAView) = length(v.cols)
+
+# aliases
+width(msa::AbstractMSA) = length(msa)
+height(msa::AbstractMSA) = nseqs(msa)
 
 function getsequence(msa::MSA, row::Int)
     return msa.seqs[row]
 end
 
 function getsequence(v::MSAView, row::Int)
-    abs_row = v.rows.first + row - 1
+    abs_row = v.rows.start + row - 1
     parent_seq = getsequence(root(v), abs_row)
     return parent_seq[v.cols]
 end
@@ -199,12 +196,12 @@ function get_base_count(msa::MSA, pos::Int)
 end
 
 function get_base_count(v::MSAView, pos::Int)
-    abs_pos = v.cols.first + pos - 1
+    abs_pos = v.cols.start + pos - 1
     return get_base_count(root(v), abs_pos)
 end
 
 function get_base_count(msa::AbstractMSA)
-    L = width(msa)
+    L = length(msa)
     counts = zeros(4, L)
     for j in 1:L
         counts[:, j] = get_base_count(msa, j)
@@ -212,21 +209,31 @@ function get_base_count(msa::AbstractMSA)
     return counts
 end
 
-# Consensus functions
-function consensus_major(msa::AbstractMSA, pos::Int)
+function consensus_major(msa::AbstractMSA, pos::Int; ignore_minors::Real=0.0)
+    0 ≤ ignore_minors ≤ 1 || throw(ArgumentError("ignore_minors must be in [0,1]"))
     p = get_base_count(msa, pos)
     if sum(p) == 0
         return '-'
     end
-    return "ACGT"[argmax(p)]
+    p_filtered = copy(p)
+    for i in 1:4
+        if p_filtered[i] ≤ ignore_minors
+            p_filtered[i] = 0.0
+        end
+    end
+    if sum(p_filtered) == 0
+        return '-'
+    end
+    return "ACGT"[argmax(p_filtered)]
 end
 
-function consensus_degen(msa::AbstractMSA, pos::Int)
+function consensus_degen(msa::AbstractMSA, pos::Int; ignore_minors::Real=0.0)
+    0 ≤ ignore_minors ≤ 1 || throw(ArgumentError("ignore_minors must be in [0,1]"))
     p = get_base_count(msa, pos)
     if sum(p) == 0
         return '-'
     end
-    active = findall(>(0), p)
+    active = findall(x -> x > ignore_minors, p)
     if isempty(active)
         return '-'
     end
@@ -234,23 +241,46 @@ function consensus_degen(msa::AbstractMSA, pos::Int)
     return get(IUPAC_V2B, bs, 'N')  # fallback to 'N' if not found
 end
 
-# Full consensus sequences
-function consensus_major(msa::AbstractMSA)
-    return join(consensus_major(msa, j) for j in 1:width(msa))
-end
-
-function consensus_degen(msa::AbstractMSA)
-    return join(consensus_degen(msa, j) for j in 1:width(msa))
-end
-
-# Placeholder for dry_msa (remove all-gap columns)
-function dry_msa(msa::AbstractMSA)
-    non_gap_cols = [j for j in 1:width(msa) if sum(get_base_count(msa, j)) > 0]
-    if non_gap_cols isa UnitRange
-        return msa[:, non_gap_cols]
-    else
-        # Materialize if non-contiguous
-        seqs = [GappedOlig(join(getsequence(msa, i)[non_gap_cols])) for i in 1:nseqs(msa)]
-        return MSA(seqs)
+function consensus_major(msa::AbstractMSA; ignore_minors::Real=0.0)
+    seq = join(consensus_major(msa, j; ignore_minors=ignore_minors) for j in 1:length(msa))
+    desc = "Major consensus for $(nseqs(msa)) seq MSA"
+    if ignore_minors > 0
+        desc *= ", ignore_minors=$ignore_minors"
     end
+    return GappedOlig(seq, desc)
+end
+
+function consensus_degen(msa::AbstractMSA; ignore_minors::Real=0.0)
+    seq = join(consensus_degen(msa, j; ignore_minors=ignore_minors) for j in 1:length(msa))
+    desc = "Degenerate consensus for $(nseqs(msa)) seq MSA"
+    if ignore_minors > 0
+        desc *= ", ignore_minors=$ignore_minors"
+    end
+    return GappedOlig(seq, desc)
+end
+
+function dry_msa(msa::AbstractMSA; gap_content::Real=1.0)
+    0 ≤ gap_content ≤ 1 || throw(ArgumentError("gap_content must be in [0,1]"))
+    non_gap_cols = [j for j in 1:length(msa) if sum(get_base_count(msa, j)) > 0]
+    if isempty(non_gap_cols)
+        return msa[:, 1:0]
+    end
+    num_cols = length(non_gap_cols)
+    kept_rows = Int[]
+    for i in 1:nseqs(msa)
+        gap_count = sum((1 for j in non_gap_cols if getsequence(msa, i, j) == '-'), init=0)
+        prop = num_cols > 0 ? gap_count / num_cols : 0.0
+        if prop < gap_content
+            push!(kept_rows, i)
+        end
+    end
+    if isempty(kept_rows)
+        return MSA(GappedOlig[])
+    end
+    new_seqs = Vector{GappedOlig}(undef, length(kept_rows))
+    for (k, row) in enumerate(kept_rows)
+        sub_str = join(getsequence(msa, row, j) for j in non_gap_cols)
+        new_seqs[k] = GappedOlig(sub_str, description(getsequence(msa, row)))
+    end
+    return MSA(new_seqs)
 end
