@@ -2,33 +2,69 @@ abstract type AbstractMSA end
 
 struct MSA <: AbstractMSA
     seqs::Vector{GappedOlig}
-    base_count::Matrix{Float64}  # 4 x L, proportions of A=1, C=2, G=3, T=4
+    base_count::Matrix{Float64}
+    bootstrap::Int
 
-    function MSA(seqs::Vector{<:GappedOlig}; gap_tolerance::Real=0.0)
+    function MSA(seqs::Vector{<:GappedOlig}; gap_tolerance::Real=0.0, bootstrap::Int=0, seed::Union{Int,Nothing}=nothing)
         0 ≤ gap_tolerance < 1 || throw(ArgumentError("gap_tolerance must be in [0,1)"))
+        bootstrap >= 0 || throw(ArgumentError("bootstrap must be non-negative"))
+        isnothing(seed) || Random.seed!(seed)
+
         if isempty(seqs)
-            return new(seqs, zeros(4, 0))
+            return new(seqs, zeros(4, 0), bootstrap)
         end
 
         L = length(first(seqs))
         all(length(s) == L for s in seqs) || throw(ArgumentError("All gapped sequences must have the same length"))
-
         n = length(seqs)
-        base_count = zeros(4, L)
 
-        for j in 1:L
-            counts = zeros(4)
-            num_valid = 0
-            for s in seqs
-                c = s[j]
-                if c != '-'
-                    num_valid += 1
-                    probs = get(IUPAC_PROBS, c, zeros(4))  # Fallback to zeros if unknown
-                    counts .+= probs
+        if bootstrap > 0
+            # Initialize with zeros - only need 4×L memory
+            base_count = zeros(4, L)
+            
+            # For each bootstrap replicate
+            for b in 1:bootstrap
+                boot_rows = rand(1:n, n)
+                boot_seqs = seqs[boot_rows]
+                
+                # Process one bootstrap replicate
+                for j in 1:L
+                    pos_counts = zeros(4)
+                    num_valid = 0
+                    for s in boot_seqs
+                        c = s[j]
+                        if c != '-'
+                            num_valid += 1
+                            probs = get(IUPAC_PROBS, c, zeros(4))
+                            pos_counts .+= probs
+                        end
+                    end
+                    
+                    if num_valid > 0
+                        current_freq = pos_counts / num_valid
+                        
+                        # Online update of the mean
+                        base_count[:, j] += (current_freq - base_count[:, j]) / b
+                    end
                 end
             end
-            if num_valid > 0
-                base_count[:, j] = counts / num_valid
+        else
+            # Original non-bootstrapped base_count
+            base_count = zeros(4, L)
+            for j in 1:L
+                counts = zeros(4)
+                num_valid = 0
+                for s in seqs
+                    c = s[j]
+                    if c != '-'
+                        num_valid += 1
+                        probs = get(IUPAC_PROBS, c, zeros(4))
+                        counts .+= probs
+                    end
+                end
+                if num_valid > 0
+                    base_count[:, j] = counts / num_valid
+                end
             end
         end
 
@@ -52,10 +88,11 @@ struct MSA <: AbstractMSA
                 end
                 new_seqs[i] = GappedOlig(String(seq_chars), description(seqs[i]))
             end
-            return MSA(new_seqs)  # Recurse with default gap_tolerance=0
+            # Recurse with same bootstrap value
+            return MSA(new_seqs; gap_tolerance=0.0, bootstrap=bootstrap, seed=seed)
         end
 
-        return new(seqs, base_count)
+        return new(seqs, base_count, bootstrap)
     end
 end
 
@@ -73,7 +110,7 @@ function root(v::MSAView)
     return root(v.parent)
 end
 
-function MSA(fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0)
+function MSA(fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0, bootstrap::Int=0)
     seqs_desc = Tuple{String, String}[]
     FastaReader(fasta) do fr
         for (i, (desc, seq)) in enumerate(fr)
@@ -111,10 +148,10 @@ function MSA(fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0)
     end
 
     gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in seqs_desc]
-    return MSA(gapped_oligs; gap_tolerance=gap_tolerance)
+    return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap)
 end
 
-function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0)
+function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0, bootstrap::Int=0)
     seqs_desc = Tuple{String, String}[]
     FastaReader(fasta) do fr
         for (i, (desc, seq)) in enumerate(fr)
@@ -143,8 +180,8 @@ function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap
         end
     end
 
-    # Validate sequences (same as above)
-    allowed = aligned ? "ACGT-" : "ACGT"
+    # Validate sequences
+    allowed = aligned ? (NON_DEGEN_BASES..., '-', 'N') : (NON_DEGEN_BASES..., 'N')
     for (seq, desc) in seqs_desc
         upper_seq = uppercase(seq)
         if !all(c -> c in allowed, upper_seq)
@@ -154,7 +191,7 @@ function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap
     end
 
     gapped_oligs = [GappedOlig(seq, desc) for (seq, desc) in seqs_desc]
-    return MSA(gapped_oligs; gap_tolerance=gap_tolerance)
+    return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap)
 end
 
 function Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::UnitRange{Int})
@@ -275,12 +312,12 @@ function dry_msa(msa::AbstractMSA; gap_content::Real=1.0)
         end
     end
     if isempty(kept_rows)
-        return MSA(GappedOlig[])
+        return MSA(GappedOlig[]; bootstrap=msa.bootstrap)
     end
     new_seqs = Vector{GappedOlig}(undef, length(kept_rows))
     for (k, row) in enumerate(kept_rows)
         sub_str = join(getsequence(msa, row, j) for j in non_gap_cols)
         new_seqs[k] = GappedOlig(sub_str, description(getsequence(msa, row)))
     end
-    return MSA(new_seqs)
+    return MSA(new_seqs; bootstrap=msa.bootstrap)
 end

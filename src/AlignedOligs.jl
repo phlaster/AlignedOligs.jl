@@ -14,6 +14,7 @@ using FastaIO
 using MAFFT_jll
 using Statistics
 using Random
+using Statistics
 
 @reexport using SeqFold
 using SeqFold: Structure
@@ -26,7 +27,8 @@ export nseqs, width, getsequence, getsequence, get_base_count, consensus_major, 
 include("utils.jl")
 include("Oligs.jl")
 include("Oligs_display.jl")
-# include("MSA.jl")
+include("MSA.jl")
+include("MSA_display.jl")
 include("SeqFold_methods.jl")
 
 
