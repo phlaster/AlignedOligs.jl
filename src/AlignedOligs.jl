@@ -15,6 +15,7 @@ using MAFFT_jll
 using Statistics
 using Random
 using Statistics
+using ProgressMeter
 
 @reexport using SeqFold
 using SeqFold: Structure

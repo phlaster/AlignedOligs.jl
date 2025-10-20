@@ -18,17 +18,14 @@ struct MSA <: AbstractMSA
         all(length(s) == L for s in seqs) || throw(ArgumentError("All gapped sequences must have the same length"))
         n = length(seqs)
 
-        if bootstrap > 0
-            # Initialize with zeros - only need 4×L memory
-            base_count = zeros(4, L)
-            
-            # For each bootstrap replicate
-            for b in 1:bootstrap
+        # Step 1: Calculate base counts with gap_tolerance = 0.0 (no thresholding)
+        base_count = zeros(4, L)
+        @inbounds if bootstrap > 0
+            @showprogress "Bootstrap, $bootstrap it." barlen=19 for b in 1:bootstrap
                 boot_rows = rand(1:n, n)
                 boot_seqs = seqs[boot_rows]
                 
-                # Process one bootstrap replicate
-                for j in 1:L
+                Threads.@threads for j in 1:L
                     pos_counts = zeros(4)
                     num_valid = 0
                     for s in boot_seqs
@@ -42,16 +39,13 @@ struct MSA <: AbstractMSA
                     
                     if num_valid > 0
                         current_freq = pos_counts / num_valid
-                        
-                        # Online update of the mean
                         base_count[:, j] += (current_freq - base_count[:, j]) / b
                     end
                 end
             end
         else
-            # Original non-bootstrapped base_count
-            base_count = zeros(4, L)
-            for j in 1:L
+            # Non-bootstrapped calculation
+            Threads.@threads for j in 1:L
                 counts = zeros(4)
                 num_valid = 0
                 for s in seqs
@@ -68,9 +62,11 @@ struct MSA <: AbstractMSA
             end
         end
 
-        if gap_tolerance > 0
+        # Step 2: Apply gap tolerance thresholding if needed
+        @inbounds if gap_tolerance > 0
+            # Create filtered sequences
             new_seqs = Vector{GappedOlig}(undef, n)
-            for i in 1:n
+            Threads.@threads for i in 1:n
                 seq_chars = Char[]
                 for j in 1:L
                     p = base_count[:, j]
@@ -88,8 +84,57 @@ struct MSA <: AbstractMSA
                 end
                 new_seqs[i] = GappedOlig(String(seq_chars), description(seqs[i]))
             end
-            # Recurse with same bootstrap value
-            return MSA(new_seqs; gap_tolerance=0.0, bootstrap=bootstrap, seed=seed)
+
+            # Step 3: Only recalculate base counts for the filtered sequences if needed
+            if bootstrap > 0 || gap_tolerance > 0
+                # Reuse the same base_count array but reset it to zeros
+                fill!(base_count, 0.0)
+                
+                if bootstrap > 0
+                    # Optimized online bootstrap calculation for filtered sequences
+                    @showprogress "Bootstrap (filtered), $bootstrap it." barlen=8 for b in 1:bootstrap
+                        boot_rows = rand(1:n, n)
+                        boot_seqs = new_seqs[boot_rows]
+                        
+                        Threads.@threads for j in 1:L
+                            pos_counts = zeros(4)
+                            num_valid = 0
+                            for s in boot_seqs
+                                c = s[j]
+                                if c != '-'
+                                    num_valid += 1
+                                    probs = get(IUPAC_PROBS, c, zeros(4))
+                                    pos_counts .+= probs
+                                end
+                            end
+                            
+                            if num_valid > 0
+                                current_freq = pos_counts / num_valid
+                                base_count[:, j] += (current_freq - base_count[:, j]) / b
+                            end
+                        end
+                    end
+                else
+                    # Non-bootstrapped recalculation for filtered sequences
+                    Threads.@threads for j in 1:L
+                        counts = zeros(4)
+                        num_valid = 0
+                        for s in new_seqs
+                            c = s[j]
+                            if c != '-'
+                                num_valid += 1
+                                probs = get(IUPAC_PROBS, c, zeros(4))
+                                counts .+= probs
+                            end
+                        end
+                        if num_valid > 0
+                            base_count[:, j] = counts / num_valid
+                        end
+                    end
+                end
+            end
+            
+            return new(new_seqs, base_count, bootstrap)
         end
 
         return new(seqs, base_count, bootstrap)
