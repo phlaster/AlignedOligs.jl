@@ -11,7 +11,6 @@ AlignedOligs
 
 using Reexport
 using FastaIO
-using MAFFT_jll
 using Statistics
 using Random
 using Statistics

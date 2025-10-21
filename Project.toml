@@ -5,12 +5,17 @@ version = "0.0.1"
 
 [deps]
 FastaIO = "a0c94c4b-ebed-5953-b5fc-82fe598ac79f"
-MAFFT_jll = "72a4bdf2-be5e-5c84-b157-f1dc2927f791"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 SeqFold = "b3b2a78d-ef5a-44e0-bc1e-af93888afa44"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[weakdeps]
+MAFFT_jll = "72a4bdf2-be5e-5c84-b157-f1dc2927f791"
+
+[extensions]
+MAFFTExt = "MAFFT_jll"
 
 [compat]
 FastaIO = "1.1.0"
@@ -18,6 +23,6 @@ MAFFT_jll = "7.525.0"
 ProgressMeter = "1.11.0"
 Random = "1.11.0"
 Reexport = "1.2.2"
-SeqFold = "0.3.1"
+SeqFold = "0.4.0"
 Statistics = "1.11.1"
 julia = "1.10"

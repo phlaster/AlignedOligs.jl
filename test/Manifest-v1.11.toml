@@ -2,7 +2,7 @@
 
 julia_version = "1.11.7"
 manifest_format = "2.0"
-project_hash = "ee009c2aefb571237bafe8f85a5fd7f6df232c35"
+project_hash = "2cfc3cfa916b570b899faafee30e10f131d75b1a"
 
 [[deps.Aqua]]
 deps = ["Compat", "Pkg", "Test"]
@@ -41,6 +41,11 @@ version = "4.18.0"
     Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
     LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
+[[deps.CompilerSupportLibraries_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+version = "1.1.1+0"
+
 [[deps.Dates]]
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -73,6 +78,12 @@ version = "0.9.20"
     [deps.JET.weakdeps]
     Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
     Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+
+[[deps.JLLWrappers]]
+deps = ["Artifacts", "Preferences"]
+git-tree-sha1 = "0533e564aae234aff59ab625543145446d8b6ec2"
+uuid = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
+version = "1.7.1"
 
 [[deps.JuliaInterpreter]]
 deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
@@ -123,6 +134,12 @@ deps = ["JuliaInterpreter"]
 git-tree-sha1 = "39240b5f66956acfa462d7fe12efe08e26d6d70d"
 uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
 version = "3.2.2"
+
+[[deps.MAFFT_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "3ca25c5565abf66aec7396e338f36c1c3383c453"
+uuid = "72a4bdf2-be5e-5c84-b157-f1dc2927f791"
+version = "7.525.0+0"
 
 [[deps.MacroTools]]
 git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"

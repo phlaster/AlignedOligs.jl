@@ -5,7 +5,7 @@ struct MSA <: AbstractMSA
     base_count::Matrix{Float64}
     bootstrap::Int
 
-    function MSA(seqs::Vector{<:GappedOlig}; gap_tolerance::Real=0.0, bootstrap::Int=0, seed::Union{Int,Nothing}=nothing)
+    function MSA(seqs::Vector{<:GappedOlig}; gap_tolerance::Real=0.0, bootstrap::Int=0, seed=nothing)
         0 ≤ gap_tolerance < 1 || throw(ArgumentError("gap_tolerance must be in [0,1)"))
         bootstrap >= 0 || throw(ArgumentError("bootstrap must be non-negative"))
         isnothing(seed) || Random.seed!(seed)
@@ -20,124 +20,82 @@ struct MSA <: AbstractMSA
 
         # Step 1: Calculate base counts with gap_tolerance = 0.0 (no thresholding)
         base_count = zeros(4, L)
-        @inbounds if bootstrap > 0
-            @showprogress "Bootstrap, $bootstrap it." barlen=19 for b in 1:bootstrap
-                boot_rows = rand(1:n, n)
-                boot_seqs = seqs[boot_rows]
-                
-                Threads.@threads for j in 1:L
-                    pos_counts = zeros(4)
-                    num_valid = 0
-                    for s in boot_seqs
-                        c = s[j]
-                        if c != '-'
-                            num_valid += 1
-                            probs = get(IUPAC_PROBS, c, zeros(4))
-                            pos_counts .+= probs
-                        end
-                    end
-                    
-                    if num_valid > 0
-                        current_freq = pos_counts / num_valid
-                        base_count[:, j] += (current_freq - base_count[:, j]) / b
-                    end
-                end
-            end
-        else
-            # Non-bootstrapped calculation
-            Threads.@threads for j in 1:L
-                counts = zeros(4)
-                num_valid = 0
-                for s in seqs
-                    c = s[j]
-                    if c != '-'
-                        num_valid += 1
-                        probs = get(IUPAC_PROBS, c, zeros(4))
-                        counts .+= probs
-                    end
-                end
-                if num_valid > 0
-                    base_count[:, j] = counts / num_valid
-                end
-            end
-        end
+        _compute_base_counts!(base_count, seqs, bootstrap, n, L; progress_label="Bootstrap, $bootstrap it.", barlen=19)
 
         # Step 2: Apply gap tolerance thresholding if needed
         @inbounds if gap_tolerance > 0
             # Create filtered sequences
             new_seqs = Vector{GappedOlig}(undef, n)
             Threads.@threads for i in 1:n
-                seq_chars = Char[]
+                seq_chars = Vector{Char}(undef, L)
                 for j in 1:L
                     p = base_count[:, j]
                     c = seqs[i][j]
-                    if c != '-' && sum(p) > 0
+                    if c != '-' && any(>(0.0), p)
                         idx = findfirst(==(c), "ACGT")
                         if !isnothing(idx) && p[idx] < gap_tolerance
-                            push!(seq_chars, '-')
+                            seq_chars[j] = '-'
                         else
-                            push!(seq_chars, c)
+                            seq_chars[j] = c
                         end
                     else
-                        push!(seq_chars, c)
+                        seq_chars[j] = c
                     end
                 end
                 new_seqs[i] = GappedOlig(String(seq_chars), description(seqs[i]))
             end
 
-            # Step 3: Only recalculate base counts for the filtered sequences if needed
-            if bootstrap > 0 || gap_tolerance > 0
-                # Reuse the same base_count array but reset it to zeros
-                fill!(base_count, 0.0)
-                
-                if bootstrap > 0
-                    # Optimized online bootstrap calculation for filtered sequences
-                    @showprogress "Bootstrap (filtered), $bootstrap it." barlen=8 for b in 1:bootstrap
-                        boot_rows = rand(1:n, n)
-                        boot_seqs = new_seqs[boot_rows]
-                        
-                        Threads.@threads for j in 1:L
-                            pos_counts = zeros(4)
-                            num_valid = 0
-                            for s in boot_seqs
-                                c = s[j]
-                                if c != '-'
-                                    num_valid += 1
-                                    probs = get(IUPAC_PROBS, c, zeros(4))
-                                    pos_counts .+= probs
-                                end
-                            end
-                            
-                            if num_valid > 0
-                                current_freq = pos_counts / num_valid
-                                base_count[:, j] += (current_freq - base_count[:, j]) / b
-                            end
-                        end
-                    end
-                else
-                    # Non-bootstrapped recalculation for filtered sequences
-                    Threads.@threads for j in 1:L
-                        counts = zeros(4)
-                        num_valid = 0
-                        for s in new_seqs
-                            c = s[j]
-                            if c != '-'
-                                num_valid += 1
-                                probs = get(IUPAC_PROBS, c, zeros(4))
-                                counts .+= probs
-                            end
-                        end
-                        if num_valid > 0
-                            base_count[:, j] = counts / num_valid
-                        end
-                    end
-                end
-            end
+            # Step 3: Recalculate base counts for the filtered sequences
+            fill!(base_count, 0.0)
+            _compute_base_counts!(base_count, new_seqs, bootstrap, n, L; progress_label="Bootstrap (filtered), $bootstrap it.", barlen=8)
             
             return new(new_seqs, base_count, bootstrap)
         end
 
         return new(seqs, base_count, bootstrap)
+    end
+end
+
+function _compute_base_counts!(base_count::Matrix{Float64}, seqs::Vector{<:GappedOlig}, bootstrap::Int, n::Int, L::Int; progress_label::String, barlen::Int)
+    if bootstrap > 0
+        @showprogress desc=progress_label barlen=barlen for b in 1:bootstrap
+            boot_rows = rand(1:n, n)
+            boot_seqs = seqs[boot_rows]
+            
+            Threads.@threads for j in 1:L
+                pos_counts = zeros(4)
+                num_valid = 0
+                for s in boot_seqs
+                    c = s[j]
+                    if c != '-'
+                        num_valid += 1
+                        probs = get(IUPAC_PROBS, c, zeros(4))
+                        pos_counts .+= probs
+                    end
+                end
+                
+                if num_valid > 0
+                    current_freq = pos_counts / num_valid
+                    base_count[:, j] += (current_freq - base_count[:, j]) / b
+                end
+            end
+        end
+    else
+        Threads.@threads for j in 1:L
+            counts = zeros(4)
+            num_valid = 0
+            for s in seqs
+                c = s[j]
+                if c != '-'
+                    num_valid += 1
+                    probs = get(IUPAC_PROBS, c, zeros(4))
+                    counts .+= probs
+                end
+            end
+            if num_valid > 0
+                base_count[:, j] = counts / num_valid
+            end
+        end
     end
 end
 
@@ -155,89 +113,45 @@ function root(v::MSAView)
     return root(v.parent)
 end
 
-function MSA(fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0, bootstrap::Int=0)
-    seqs_desc = Tuple{String, String}[]
+function _align_if_needed!(seqs_desc::Vector{Tuple{String,String}}, mafft::Bool)
+    # This is overloaded in ext/MAFFTExt.jl to load MAFFT_jll artifact dynamically
+    mafft || return
+    # If we reach here, mafft=true but extension isn't loaded
+    error("Aignment requires MAFFT_jll artifact to be installed. \n\
+        If you need to align your FASTAs, please `]add MAFFT_jll` to your project and load it with `using MAFFT_jll`."
+    )
+end
+
+function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, gap_tolerance::Real=0.0, bootstrap::Int=0, seed=nothing)
+    fasta_content = Tuple{String, String}[]
     FastaReader(fasta) do fr
-        for (i, (desc, seq)) in enumerate(fr)
+        i = 0
+        for (desc, seq) in fr
+            predicate(desc) ? (i += 1) : continue
             desc = isempty(desc) ? "seq$i" : desc
-            push!(seqs_desc, (desc, seq))
+            push!(fasta_content, (desc, seq))
         end
     end
 
-    if !aligned
-        mktemp() do input_path, io
-            FastaWriter(io) do fw
-                for (desc, seq) in seqs_desc
-                    writeentry(fw, desc, seq)
-                end
-            end
-            close(io)
-            aligned_output = read(`$(MAFFT_jll.mafft()) $input_path`, String)
-            seqs_desc = Tuple{String, String}[]
-            FastaReader(IOBuffer(aligned_output)) do fr
-                for (desc, seq) in fr
-                    push!(seqs_desc, (desc, seq))
-                end
-            end
-        end
-    end
-
-    # Validate sequences
-    allowed = aligned ? (NON_DEGEN_BASES..., '-', 'N') : (NON_DEGEN_BASES..., 'N')
-    for (desc, seq) in seqs_desc
+    allowed = mafft ? (NON_DEGEN_BASES..., 'N') : (NON_DEGEN_BASES..., '-', 'N')
+    for (desc, seq) in fasta_content
         upper_seq = uppercase(seq)
         if !all(c -> c in allowed, upper_seq)
             invalid_chars = setdiff(unique(upper_seq), collect(allowed))
-            throw(ArgumentError("Sequence '$desc' contains invalid characters: $(join(invalid_chars, ", ")). Only $(join(collect(allowed), ", ")) allowed."))
+            throw(ArgumentError(
+                "Sequence '$desc' contains invalid characters: $(join(invalid_chars, ", ")).\n\
+                Only $(join(collect(allowed), ", ")) allowed when `mafft=$mafft`"
+            ))
         end
     end
 
-    gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in seqs_desc]
-    return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap)
+    _align_if_needed!(fasta_content, mafft)
+
+    gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in fasta_content]
+    return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap, seed=seed)
 end
 
-function MSA(predicate::Function, fasta::AbstractString; aligned::Bool=true, gap_tolerance::Real=0.0, bootstrap::Int=0)
-    seqs_desc = Tuple{String, String}[]
-    FastaReader(fasta) do fr
-        for (i, (desc, seq)) in enumerate(fr)
-            if predicate(desc)
-                desc = isempty(desc) ? "seq$i" : desc
-                push!(seqs_desc, (seq, desc))
-            end
-        end
-    end
-
-    if !aligned
-        mktemp() do input_path, io
-            FastaWriter(io) do fw
-                for (desc, seq) in seqs_desc
-                    writeentry(fw, desc, seq)
-                end
-            end
-            close(io)
-            aligned_output = read(`$(MAFFT_jll.mafft()) $input_path`, String)
-            seqs_desc = Tuple{String, String}[]
-            FastaReader(IOBuffer(aligned_output)) do fr
-                for (desc, seq) in fr
-                    push!(seqs_desc, (seq, desc))
-                end
-            end
-        end
-    end
-
-    # Validate sequences
-    allowed = aligned ? (NON_DEGEN_BASES..., '-', 'N') : (NON_DEGEN_BASES..., 'N')
-    for (seq, desc) in seqs_desc
-        upper_seq = uppercase(seq)
-        if !all(c -> c in allowed, upper_seq)
-            invalid_chars = setdiff(unique(upper_seq), collect(allowed))
-            throw(ArgumentError("Sequence '$desc' contains invalid characters: $(join(invalid_chars, ", ")). Only $(join(collect(allowed), ", ")) allowed."))
-        end
-    end
-
-    gapped_oligs = [GappedOlig(seq, desc) for (seq, desc) in seqs_desc]
-    return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap)
-end
+MSA(fasta::AbstractString; kwargs...) = MSA(x->true, fasta; kwargs...)
 
 function Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::UnitRange{Int})
     root_msa = root(msa)
@@ -343,7 +257,7 @@ end
 
 function dry_msa(msa::AbstractMSA; gap_content::Real=1.0)
     0 ≤ gap_content ≤ 1 || throw(ArgumentError("gap_content must be in [0,1]"))
-    non_gap_cols = [j for j in 1:length(msa) if sum(get_base_count(msa, j)) > 0]
+    non_gap_cols = [j for j in 1:length(msa) if any(>(0.0), get_base_count(msa, j))]
     if isempty(non_gap_cols)
         return msa[:, 1:0]
     end
