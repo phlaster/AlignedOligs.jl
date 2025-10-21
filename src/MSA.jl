@@ -113,22 +113,21 @@ function root(v::MSAView)
     return root(v.parent)
 end
 
-function _align_if_needed!(seqs_desc::Vector{Tuple{String,String}}, mafft::Bool)
+function _align!(::Vector{Tuple{String,String}})
     # This is overloaded in ext/MAFFTExt.jl to load MAFFT_jll artifact dynamically
-    mafft || return
-    # If we reach here, mafft=true but extension isn't loaded
-    error("Aignment requires MAFFT_jll artifact to be installed. \n\
-        If you need to align your FASTAs, please `]add MAFFT_jll` to your project and load it with `using MAFFT_jll`."
+    error("Aignment requires MAFFT_jll artifact to be installed.\n\
+        If you need to align your FASTAs, please `]add MAFFT_jll` to your project\n\
+        and load it with `using MAFFT_jll` before calling MSA with `mafft=true`."
     )
 end
 
 function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, gap_tolerance::Real=0.0, bootstrap::Int=0, seed=nothing)
     fasta_content = Tuple{String, String}[]
     FastaReader(fasta) do fr
-        i = 0
+        counter = 0
         for (desc, seq) in fr
-            predicate(desc) ? (i += 1) : continue
-            desc = isempty(desc) ? "seq$i" : desc
+            predicate(desc) ? (counter += 1) : continue
+            desc = isempty(desc) ? "seq$counter" : desc
             push!(fasta_content, (desc, seq))
         end
     end
@@ -145,7 +144,7 @@ function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, gap_
         end
     end
 
-    _align_if_needed!(fasta_content, mafft)
+    mafft && _align!(fasta_content)
 
     gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in fasta_content]
     return MSA(gapped_oligs; gap_tolerance=gap_tolerance, bootstrap=bootstrap, seed=seed)
