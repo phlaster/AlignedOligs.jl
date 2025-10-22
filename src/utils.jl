@@ -50,7 +50,7 @@ const DNA_COMP_TABLE_DEG = let
 end
 
 const IUPAC_PROBS = let
-    d = Dict{Char, Vector{Float64}}()
+    d = Dict{Char, NTuple{4, Float64}}()
     bases = "ACGT"
     for (k, v) in IUPAC_B2V
         probs = zeros(Float64, 4)
@@ -61,7 +61,8 @@ const IUPAC_PROBS = let
         if !isempty(v)
             probs ./= length(v)
         end
-        d[k] = probs
+        d[k] = Tuple(probs)
     end
+    d['-'] = (0.,0.,0.,0.)
     d
 end

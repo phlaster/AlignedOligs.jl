@@ -52,14 +52,26 @@ function SeqFold.gc_content(olig::AbstractOlig)::Float64
     return total_gc / length(olig)
 end
 
-function SeqFold.fold(olig::AbstractOlig; temp::Real = 37.0)::Vector{Structure} 
+function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_variants::Int=10000)::Float64
     hasgaps(olig) && throw(ErrorException("Folding not supported for gapped sequences"))
-    return SeqFold.fold(String(Olig(olig)); temp=temp)
-end
-
-function SeqFold.dg(olig::AbstractOlig; temp::Real = 37.0)::Float64 
-    hasgaps(olig) && throw(ErrorException("Free energy calculation not supported for gapped sequences"))
-    return SeqFold.dg(String(Olig(olig)); temp=temp)
+    isempty(olig) && return NaN
+    if n_unique_oligs(olig) == 1
+        return SeqFold.dg(String(olig); temp=temp)
+    end
+    dgs = Vector{Float64}(undef, min(n_unique_oligs(olig), max_variants))
+    if n_unique_oligs(olig) > max_variants
+        for k in 1:max_variants
+            o = rand(olig)
+            dgs[k] = SeqFold.dg(String(o); temp=temp)
+        end
+    else
+        i = 1
+        for o in nondegens(olig)
+            dgs[i] = SeqFold.dg(String(o); temp=temp)
+            i += 1
+        end
+    end
+    return minimum(dgs)
 end
 
 function SeqFold.dg_cache(olig::AbstractOlig; temp::Real = 37.0)::Matrix{Float64}

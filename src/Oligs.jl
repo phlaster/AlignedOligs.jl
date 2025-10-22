@@ -47,7 +47,7 @@ function DegenerateOlig(seq::AbstractString, descr = "")
     end
     
     n_degenerate = count(char -> char in DEGEN_BASES, seq)
-    n_possible = reduce(*, IUPAC_COUNTS[char] for char in seq, init=BigInt(1))
+    n_possible = reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
     return DegenerateOlig(seq, n_degenerate, n_possible, string(descr))
 end
 
@@ -61,48 +61,61 @@ struct GappedOlig{T<:Union{Olig,DegenerateOlig}} <: AbstractOlig
 
     function GappedOlig(parent::T, gaps::Vector{Pair{Int,Int}}) where T <: Union{Olig,DegenerateOlig}
         parent_len = length(parent)
-        isempty(gaps) || sort!(gaps)
-        prev_start = 0
-        prev_end = 0
-        for (i, (start, len)) in enumerate(gaps)
-            start >= 1 || throw(ArgumentError("Gap start position $start must be >= 1"))
-            start <= parent_len + 1 || throw(ArgumentError("Gap start $start exceeds allowed $parent_len + 1"))
-            len > 0 || throw(ArgumentError("Gap length $len must be positive"))
-            gap_end = start + len - 1
-            if start <= prev_end
-                throw(ArgumentError("Gaps must be sorted and non-overlapping"))
-            end
-            prev_start = start
-            prev_end = gap_end
+        if isempty(gaps)
+            return new{T}(parent, gaps, parent_len)
         end
-        total_length = parent_len + sum((len for (_, len) in gaps), init=0)
-        return new{T}(parent, gaps, total_length)
+
+        sorted_gaps = sort(gaps; by=first)
+        
+        for i in 1:length(sorted_gaps)
+            start, len = sorted_gaps[i]
+            if start < 1 || start > parent_len + 1
+                throw(ArgumentError("Gap start position $start must be between 1 and $(parent_len + 1)"))
+            end
+            if len <= 0
+                throw(ArgumentError("Gap length must be positive, got $len"))
+            end
+            if i > 1 && sorted_gaps[i-1].first == start
+                throw(ArgumentError("Duplicate gap start position: $start"))
+            end
+        end
+
+        total_length = parent_len + sum(len for (_, len) in sorted_gaps)
+        return new{T}(parent, sorted_gaps, total_length)
     end
 end
 
 GappedOlig() = EMPTY_OLIG
 
-function GappedOlig(seq::AbstractString, descr::AbstractString="")
+function GappedOlig(seq::AbstractString, descr::AbstractString = "")
     parent_seq = filter(c -> c != '-', seq)
     underlying_olig = try
         Olig(parent_seq, descr)
-    catch ErrorException
-        DegenerateOlig(parent_seq, descr)
+    catch err
+        if err isa ErrorException && startswith(err.msg, "Olig contains unallowed characters")
+            DegenerateOlig(parent_seq, descr)
+        else
+            rethrow(err)
+        end
     end
+
     gaps = Pair{Int,Int}[]
     parent_pos = 0
     i = 1
-    while i <= length(seq)
+    n = length(seq)
+    
+    while i <= n
         if seq[i] != '-'
             parent_pos += 1
             i += 1
         else
+            gap_start = parent_pos + 1
             len = 0
-            while i <= length(seq) && seq[i] == '-'
+            while i <= n && seq[i] == '-'
                 len += 1
                 i += 1
             end
-            push!(gaps, (parent_pos + 1) => len)
+            push!(gaps, gap_start => len)
         end
     end
     return GappedOlig(underlying_olig, gaps)
@@ -273,7 +286,7 @@ hasgaps(ov::OligView) = any(c == '-' for c in ov)
 
 n_unique_oligs(::AbstractOlig) = BigInt(1)
 n_unique_oligs(d::DegenerateOlig) = d.n_unique_oligs
-n_unique_oligs(ov::OligView) = reduce(*, (get(IUPAC_COUNTS, base, 1) for base in ov), init=BigInt(1))
+n_unique_oligs(ov::OligView) = reduce(*, (IUPAC_COUNTS[base] for base in ov), init=BigInt(1))
 n_unique_oligs(go::GappedOlig) = n_unique_oligs(parent(go))
 
 n_deg_pos(::AbstractOlig) = 0
@@ -312,7 +325,8 @@ function Base.iterate(iter::NonDegenIterator)
     end
     
     state = (indices, options, lens, buffer, length(olig))
-    return Olig(String(buffer), description(olig)), state
+    descr = string("Non-degen sample from: ", description(olig))
+    return Olig(String(buffer), descr), state
 end
 
 function Base.iterate(iter::NonDegenIterator, state)
@@ -331,8 +345,8 @@ function Base.iterate(iter::NonDegenIterator, state)
     @inbounds @simd for j in 1:n
         buffer[j] = options[j][indices[j]]
     end
-
-    return Olig(String(buffer), description(parent(iter))), (indices, options, lens, buffer, n)
+    descr = string("Non-degen sample from: ", description(parent(iter)))
+    return Olig(String(buffer), descr), (indices, options, lens, buffer, n)
 end
 
 Base.length(iter::NonDegenIterator) = iter.n_variants
@@ -365,12 +379,14 @@ function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
         options = IUPAC_B2V[c]
         buffer[i] = rand(rng, options)
     end
-    return Olig(String(buffer), description(olig))
+    descr = string("Random non-degen sample from: ", description(olig))
+    return Olig(String(buffer), descr)
 end
 
 function Base.rand(rng::AbstractRNG, ov::OligView)
     parent_olig = rand(rng, parent(ov))
-    return Olig(String(parent_olig)[olig_range(ov)], description(ov))
+    descr = string("Random non-degen sample from $(olig_range(ov)) OligView of: ", description(ov))
+    return Olig(String(parent_olig)[olig_range(ov)], descr)
 end
 
 Base.rand(rng::AbstractRNG, go::GappedOlig) = go

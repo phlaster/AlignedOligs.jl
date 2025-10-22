@@ -36,7 +36,7 @@ function Base.show(io::IO, msa::AbstractMSA)
                 println(io, getsequence(msa, i))
             end
             if n_first + n_last < n_sequences
-                println(io, "...")
+                println(io, "⋅⋅⋅")
             end
             start_idx_last = max(n_first + 1, n_sequences - n_last + 1)
             for i in start_idx_last:n_sequences
@@ -61,7 +61,7 @@ function Base.show(io::IO, msa::AbstractMSA)
                     end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
                     start_part = seq_str[1:start_end_idx]
                     end_part = seq_str[end_start_idx:end]
-                    println(io, start_part * "..." * end_part)
+                    println(io, start_part * "⋅⋅⋅" * end_part)
                 end
             end
         else
@@ -81,7 +81,7 @@ function Base.show(io::IO, msa::AbstractMSA)
                      end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
                      start_part = seq_str[1:start_end_idx]
                      end_part = seq_str[end_start_idx:end]
-                     println(io, start_part * "..." * end_part)
+                     println(io, start_part * "⋅⋅⋅" * end_part)
                  end
             end
 
@@ -100,7 +100,7 @@ function Base.show(io::IO, msa::AbstractMSA)
                     end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
                     start_part = seq_str[1:start_end_idx]
                     end_part = seq_str[end_start_idx:end]
-                    println(io, start_part * "..." * end_part)
+                    println(io, start_part * "⋅⋅⋅" * end_part)
                 end
             end
         end
