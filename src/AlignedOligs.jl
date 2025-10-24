@@ -21,18 +21,15 @@ using SeqFold: Structure
 
 export AbstractOlig, Olig, DegenerateOlig, OligView, GappedOlig
 export n_unique_oligs, n_deg_pos, nondegens, description, hasgaps
-export AbstractMSA, MSA, MSAView, msadepth, width, height, root, bval, min_tresh
+export AbstractMSA, MSA, MSAView, msadepth, msadet, width, height, root, bval, min_tresh
 export nseqs, width, getsequence, getsequence, get_base_count, consensus_major, consensus_degen, dry_msa
-export Primer, construct_primers
+export Primer, construct_primers, best_pairs
 
 include("utils.jl")
 include("Oligs.jl")
 include("MSA.jl")
 include("SeqFold_methods.jl")
 include("Primers.jl")
-include("Oligs_display.jl")
-include("MSA_display.jl")
-
-
+include("show.jl")
 
 end
