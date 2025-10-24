@@ -164,7 +164,8 @@ SeqFold.gc_content(primer::Primer) = primer.gc
 function best_pairs(
     forwards::Vector{Primer},
     reverses::Vector{Primer};
-    amplicon_len::UnitRange{Int}=0:9999
+    amplicon_len::UnitRange{Int}=0:9999,
+    max_tm_diff::Real=4.0
 )::Vector{Pair{Primer}}
     pairs = Pair{Primer}[]
 
@@ -179,8 +180,14 @@ function best_pairs(
     @showprogress desc="Matching primer pairs..." barlen=10 for f in forwards
         for r in reverses
             if f.pos.stop >= r.pos.start
+                # overlapping primers
                 continue
             end
+            if max_tm_diff < abs(f.tm.mean - r.tm.mean)
+                # too big melting T difference
+                continue
+            end
+                
             amplicon = r.pos.stop - f.pos.start + 1
             if amplicon in amplicon_len
                 push!(pairs, f => r)
