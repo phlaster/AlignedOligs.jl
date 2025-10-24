@@ -90,7 +90,7 @@ root(msav::MSAView) = root(msav.parent)
 bval(msa::MSA) = msa.bootstrap
 bval(msav::MSAView) = root(msav).bootstrap
 min_tresh(msa::MSA) = msa.minor_threshold
-min_tresh(msav::MSA) = root(msav).minor_threshold
+min_tresh(msav::MSAView) = root(msav).minor_threshold
 _is_full_height(msa::MSA) = true
 _is_full_height(msav::MSAView) = msav.rows == 1:nseqs(root(msav))
 
@@ -140,7 +140,7 @@ function Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, cols::UnitRange{I
 end
 Base.getindex(msa::AbstractMSA, row::Int, col::Int) = getsequence(msa, row, col)
 Base.getindex(msa::AbstractMSA, row::Int, cols::UnitRange{Int}) = msa[row:row, cols]
-Base.getindex(msa::AbstractMSA, row::Int, cols::Colon) = msa[row:row, :]
+Base.getindex(msa::AbstractMSA, row::Int, cols::Colon) = getsequence(msa, row)
 Base.getindex(msa::AbstractMSA, rows::UnitRange{Int}, col::Int) = msa[rows, col:col]
 Base.getindex(msa::AbstractMSA, rows::Colon, col::Int) = msa[:, col:col]
 Base.getindex(msa::AbstractMSA, rows::Colon, cols::UnitRange{Int}) = msa[1:nseqs(msa), cols]
@@ -188,7 +188,6 @@ getsequence(msa::AbstractMSA, row::Int, col::Int) = getsequence(msa, row)[col]
 get_base_count(msa::MSA, pos::Int) = @view msa.base_count[:, pos]
 get_base_count(msa::MSA, interval::UnitRange{Int}) = @view msa.base_count[:, interval]
 get_base_count(msa::MSA) = msa.base_count
-
 function get_base_count(msav::MSAView, pos::Int)
     if !_is_full_height(msav)
         throw(ErrorException("get_base_count not supported for views that slice rows (height), as it requires recomputation"))
@@ -196,7 +195,6 @@ function get_base_count(msav::MSAView, pos::Int)
     abs_pos = msav.cols.start + pos - 1
     return @view root(msav).base_count[:, abs_pos]
 end
-
 function get_base_count(msav::MSAView, interval::UnitRange{Int})
     if !_is_full_height(msav)
         throw(ErrorException("get_base_count not supported for views that slice rows (height), as it requires recomputation"))
@@ -205,46 +203,30 @@ function get_base_count(msav::MSAView, interval::UnitRange{Int})
     abs_interval = abs_start:(abs_start + length(interval) - 1)
     return @view root(msav).base_count[:, abs_interval]
 end
-
 function get_base_count(msav::MSAView)
     return get_base_count(msav, 1:length(msav))
 end
 
 function msadepth(msa::AbstractMSA, pos::Int)::Float64
-    m = nseqs(msa)
-    if m == 0
-        return 0.0
-    end
-    count = 0
-    for row in 1:m
-        if getsequence(msa, row, pos) != '-'
-            count += 1
-        end
-    end
-    return count / m
+    sum(view(msa.base_count, :, pos))
 end
-
 function msadepth(msa::AbstractMSA, interval::UnitRange{Int})::Vector{Float64}
-    Base.checkbounds(msa, :, interval)
-    L = length(interval)
-    m = nseqs(msa)
-    if m == 0
-        return zeros(Float64, L)
-    end
-    counts = zeros(Int, L)
-    Threads.@threads for row in 1:m
-        seq = getsequence(msa, row)
-        for (k, j) in enumerate(interval)
-            if seq[j] != '-'
-                counts[k] += 1
-            end
-        end
-    end
-    return counts ./ m
+    vec(sum(view(msa.base_count, :, interval), dims=1))
 end
-
 function msadepth(msa::AbstractMSA)::Vector{Float64}
     return msadepth(msa, 1:length(msa))
+end
+
+function msadet(msa::AbstractMSA, pos::Int)::Float64
+    v = view(msa.base_count, :, pos)
+    s = sum(v)
+    s == 0.0 ? 0.0 : maximum(v) / s
+end
+function msadet(msa::AbstractMSA, interval::UnitRange{Int})::Vector{Float64}
+    return [msadet(msa, pos) for pos in interval]
+end
+function msadet(msa::AbstractMSA)::Vector{Float64}
+    return msadet(msa, 1:length(msa))
 end
 
 function consensus_major(msa::AbstractMSA, pos::Int)
@@ -253,6 +235,11 @@ function consensus_major(msa::AbstractMSA, pos::Int)
         return '-'
     end
     return NON_DEGEN_BASES[argmax(p)]
+end
+function consensus_major(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa))
+    seq = join(consensus_major(msa, j) for j in interval)
+    desc = "Major consensus for $(nseqs(msa)) seq MSA"
+    return GappedOlig(seq, desc)
 end
 
 function consensus_degen(msa::AbstractMSA, pos::Int)
@@ -267,13 +254,6 @@ function consensus_degen(msa::AbstractMSA, pos::Int)
     bs = sort!(collect(NON_DEGEN_BASES[active]))
     return IUPAC_V2B[bs]
 end
-
-function consensus_major(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa))
-    seq = join(consensus_major(msa, j) for j in interval)
-    desc = "Major consensus for $(nseqs(msa)) seq MSA"
-    return GappedOlig(seq, desc)
-end
-
 function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa))
     seq = join(consensus_degen(msa, j) for j in interval)
     desc = "Degenerate consensus for $(nseqs(msa)) seq MSA"

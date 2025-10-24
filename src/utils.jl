@@ -51,11 +51,10 @@ end
 
 const IUPAC_PROBS = let
     d = Dict{Char, NTuple{4, Float64}}()
-    bases = "ACGT"
     for (k, v) in IUPAC_B2V
         probs = zeros(Float64, 4)
         for base in v
-            idx = findfirst(==(base), bases)
+            idx = findfirst(==(base), NON_DEGEN_BASES)
             probs[idx] += 1.0
         end
         if !isempty(v)

@@ -3,7 +3,7 @@ SeqFold.revcomp(olig::DegenerateOlig) = DegenerateOlig(SeqFold.revcomp(String(ol
 function SeqFold.revcomp(go::GappedOlig)
     rev_parent = SeqFold.revcomp(go.parent)
     if isempty(go.gaps)
-        return GappedOlig(rev_parent, Pair{Int,Int}[])
+        return GappedOlig(rev_parent, Pair{Int}[])
     end
     cum_len = 0
     gs_list = Vector{Int}(undef, length(go.gaps))
@@ -13,7 +13,7 @@ function SeqFold.revcomp(go::GappedOlig)
         cum_len += len
     end
     total_len = go.total_length
-    new_gaps = Vector{Pair{Int, Int}}(undef, length(go.gaps))
+    new_gaps = Vector{Pair{Int}}(undef, length(go.gaps))
     for i in eachindex(go.gaps)
         len = go.gaps[i].second
         gs = gs_list[i]
@@ -22,7 +22,7 @@ function SeqFold.revcomp(go::GappedOlig)
     end
     sort!(new_gaps, by=first)
     cum_len = 0
-    rev_gaps = Vector{Pair{Int, Int}}(undef, length(new_gaps))
+    rev_gaps = Vector{Pair{Int}}(undef, length(new_gaps))
     for (i, (new_gs, len)) in enumerate(new_gaps)
         new_start = new_gs - cum_len
         rev_gaps[i] = new_start => len
@@ -52,7 +52,7 @@ function SeqFold.gc_content(olig::AbstractOlig)::Float64
     return total_gc / length(olig)
 end
 
-function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_variants::Int=10000)::Float64
+function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_variants::Int=1000)::Float64
     hasgaps(olig) && throw(ErrorException("Folding not supported for gapped sequences"))
     isempty(olig) && return NaN
     if n_unique_oligs(olig) == 1
@@ -84,7 +84,7 @@ end
 
 SeqFold.dot_bracket(olig::AbstractOlig, structs::Vector{SeqFold.Structure}) = SeqFold.dot_bracket(String(Olig(olig)), structs)
 
-function SeqFold.tm(olig1::AbstractOlig, olig2::AbstractOlig; conditions=:pcr, conf_int::Real=0.8, max_variants::Int=10000, kwargs...)
+function SeqFold.tm(olig1::AbstractOlig, olig2::AbstractOlig; conditions=:pcr, conf_int::Real=0.8, max_variants::Int=1000, kwargs...)
     (hasgaps(olig1) || hasgaps(olig2)) && throw(ErrorException("Melting temperature calculation not supported for gapped sequences"))
     if !(0 < conf_int <= 1)
         throw(ArgumentError("conf_int must be in range (0, 1]"))
@@ -128,8 +128,7 @@ function SeqFold.tm(olig1::AbstractOlig, olig2::AbstractOlig; conditions=:pcr, c
         conf = (round(low, digits=1), round(high, digits=1))
     )
 end
-
-function SeqFold.tm(olig::AbstractOlig; conditions=:pcr, conf_int::Real=0.9, max_variants::Int=10000, kwargs...)
+function SeqFold.tm(olig::AbstractOlig; conditions=:pcr, conf_int::Real=0.9, max_variants::Int=1000, kwargs...)
     SeqFold.tm(olig, SeqFold.complement(olig); conditions=conditions, conf_int=conf_int, max_variants=max_variants, kwargs...)
 end
 
@@ -137,7 +136,6 @@ function SeqFold.tm_cache(olig1::AbstractOlig, olig2::AbstractOlig; conditions=:
     (hasgaps(olig1) || hasgaps(olig2)) && throw(ErrorException("Melting temperature cache not supported for gapped sequences"))
     SeqFold.tm_cache(String(Olig(olig1)), String(Olig(olig2)); conditions=conditions, kwargs...)
 end
-
 function SeqFold.tm_cache(olig::AbstractOlig; conditions=:pcr, kwargs...)::Matrix{Float64}
     SeqFold.tm_cache(olig, SeqFold.complement(olig); conditions=conditions, kwargs...)
 end

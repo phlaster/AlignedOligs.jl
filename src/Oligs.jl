@@ -56,10 +56,10 @@ DegenerateOlig(olig::AbstractOlig) = DegenerateOlig(String(olig), n_deg_pos(olig
 
 struct GappedOlig{T<:Union{Olig,DegenerateOlig}} <: AbstractOlig
     parent::T
-    gaps::Vector{Pair{Int, Int}}  # sorted, non-overlapping: start position (1-based in ungapped) => length
+    gaps::Vector{Pair{Int}}  # sorted, non-overlapping: start position (1-based in ungapped) => length
     total_length::Int
 
-    function GappedOlig(parent::T, gaps::Vector{Pair{Int,Int}}) where T <: Union{Olig,DegenerateOlig}
+    function GappedOlig(parent::T, gaps::Vector{Pair{Int}}) where T <: Union{Olig,DegenerateOlig}
         parent_len = length(parent)
         if isempty(gaps)
             return new{T}(parent, gaps, parent_len)
@@ -99,7 +99,7 @@ function GappedOlig(seq::AbstractString, descr::AbstractString = "")
         end
     end
 
-    gaps = Pair{Int,Int}[]
+    gaps = Pair{Int}[]
     parent_pos = 0
     i = 1
     n = length(seq)
@@ -328,7 +328,6 @@ function Base.iterate(iter::NonDegenIterator)
     descr = string("Non-degen sample from: ", description(olig))
     return Olig(String(buffer), descr), state
 end
-
 function Base.iterate(iter::NonDegenIterator, state)
     indices, options, lens, buffer, n = state
     n == 0 && return nothing
@@ -371,7 +370,6 @@ function nondegens(ov::OligView)
 end
 
 Base.rand(rng::AbstractRNG, olig::Olig) = olig
-
 function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
     isempty(olig) && return EMPTY_OLIG
     buffer = Vector{Char}(undef, length(olig))
@@ -382,22 +380,18 @@ function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
     descr = string("Random non-degen sample from: ", description(olig))
     return Olig(String(buffer), descr)
 end
-
 function Base.rand(rng::AbstractRNG, ov::OligView)
     parent_olig = rand(rng, parent(ov))
     descr = string("Random non-degen sample from $(olig_range(ov)) OligView of: ", description(ov))
     return Olig(String(parent_olig)[olig_range(ov)], descr)
 end
-
 Base.rand(rng::AbstractRNG, go::GappedOlig) = go
-
 Base.rand(olig::AbstractOlig) = rand(Random.GLOBAL_RNG, olig)
 
 function Base.iterate(go::GappedOlig)
     length(go) == 0 && return nothing
     return iterate(go, (1, 1, 1, 0))
 end
-
 function Base.iterate(go::GappedOlig, state::Tuple{Int, Int, Int, Int})
     pos, ungapped_pos, gap_idx, remaining = state
     if pos > length(go)
@@ -425,9 +419,7 @@ function Base.iterate(go::GappedOlig, state::Tuple{Int, Int, Int, Int})
     end
     return char, (pos + 1, new_ungapped, new_gap_idx, new_remaining)
 end
-
 Base.iterate(olig::AbstractOlig) = length(olig) == 0 ? nothing : (olig[1], 2)
-
 function Base.iterate(olig::AbstractOlig, state::Int)
     if state > length(olig)
         return nothing
