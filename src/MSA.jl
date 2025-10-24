@@ -61,8 +61,8 @@ root(msa::MSA) = msa
 root(msav::MSAView) = root(msav.parent)
 bval(msa::MSA) = msa.bootstrap
 bval(msav::MSAView) = root(msav).bootstrap
-min_tresh(msa::MSA) = msa.minor_threshold
-min_tresh(msav::MSAView) = root(msav).minor_threshold
+# min_tresh(msa::MSA) = msa.minor_threshold
+# min_tresh(msav::MSAView) = root(msav).minor_threshold
 _is_full_height(msa::MSA) = true
 _is_full_height(msav::MSAView) = msav.rows == 1:nseqs(root(msav))
 
@@ -74,7 +74,7 @@ function _align!(::Vector{Tuple{String,String}})
     )
 end
 
-function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, minor_threshold::Real=0.0, bootstrap::Int=0, seed=nothing)
+function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, bootstrap::Int=0, seed=nothing)
     fasta_content = Tuple{String, String}[]
     FastaReader(fasta) do fr
         counter = 0
@@ -100,7 +100,7 @@ function MSA(predicate::Function, fasta::AbstractString; mafft::Bool=false, mino
     mafft && _align!(fasta_content)
 
     gapped_oligs = [GappedOlig(seq, desc) for (desc, seq) in fasta_content]
-    return MSA(gapped_oligs; minor_threshold=minor_threshold, bootstrap=bootstrap, seed=seed)
+    return MSA(gapped_oligs; bootstrap=bootstrap, seed=seed)
 end
 MSA(fasta::AbstractString; kwargs...) = MSA(x->true, fasta; kwargs...)
 

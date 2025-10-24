@@ -23,7 +23,7 @@ function Primer(
 )
     0 ≤ slack ≤ 1 || throw(ArgumentError("slack=$slack, has to be in [0,1]"))
     0 ≤ dg_temp ≤ 120 || throw(ArgumentError("dg_temp=$dg_temp, which is unrealistic, has to be in [0,120]"))
-    thresh = min_tresh(msa)
+    # thresh = min_tresh(msa)
     gapped_cons = consensus_degen(msa, interval)
     if !is_forward
         gapped_cons = revcomp(gapped_cons)
@@ -31,9 +31,9 @@ function Primer(
     dir_str = is_forward ? "forward" : "reverse"
     degeneracy = n_deg_pos(gapped_cons) > 0 ? "Degenerate" : "Non degenerate"
     new_desc = "$degeneracy $dir_str primer for $(nseqs(msa)) seq MSA at positions $interval"
-    if thresh > 0
-        new_desc *= ", minor_thresh=$thresh"
-    end
+    # if thresh > 0
+    #     new_desc *= ", minor_thresh=$thresh"
+    # end
     underlying_olig = try 
         DegenerateOlig(String(gapped_cons), new_desc)
     catch e
