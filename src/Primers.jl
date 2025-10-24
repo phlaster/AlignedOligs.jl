@@ -127,15 +127,9 @@ function construct_primers(
             if !is_forward
                 gapped_cons = SeqFold.revcomp(gapped_cons)
             end
-            underlying_olig = try
-                DegenerateOlig(String(gapped_cons), "Primer for $(height(msa))seq MSA")
-            catch e
-                if isa(e, ErrorException) && occursin("'-'", e.msg)
-                    continue
-                else
-                    rethrow()
-                end
-            end
+            hasgaps(gapped_cons) && continue
+            underlying_olig = DegenerateOlig(String(gapped_cons), "Primer for $(height(msa)) seq MSA")
+            
             # APPLY FILTERS
             n_unique_oligs(underlying_olig) > max_olig_variants && continue
             
