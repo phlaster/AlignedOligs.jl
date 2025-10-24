@@ -20,4 +20,4 @@ function AlignedOligs._align!(fasta_content::Vector{Tuple{String,String}})
     return
 end
 
-end  # module MAFFTExt
+end  # module
