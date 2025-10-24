@@ -180,10 +180,10 @@ function get_base_count(msav::MSAView)
 end
 
 function msadepth(msa::AbstractMSA, pos::Int)::Float64
-    sum(view(msa.base_count, :, pos))
+    min(1.0, sum(view(msa.base_count, :, pos)))
 end
 function msadepth(msa::AbstractMSA, interval::UnitRange{Int})::Vector{Float64}
-    vec(sum(view(msa.base_count, :, interval), dims=1))
+    min.(1.0, sum(view(msa.base_count, :, interval), dims=1))
 end
 function msadepth(msa::AbstractMSA)::Vector{Float64}
     return msadepth(msa, 1:length(msa))
@@ -191,7 +191,7 @@ end
 
 function msadet(msa::AbstractMSA, pos::Int)::Float64
     v = view(msa.base_count, :, pos)
-    s = sum(v)
+    s = min(1.0, sum(v))
     s == 0.0 ? 0.0 : maximum(v) / s
 end
 function msadet(msa::AbstractMSA, interval::UnitRange{Int})::Vector{Float64}
