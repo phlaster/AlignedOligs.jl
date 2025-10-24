@@ -4,14 +4,12 @@ struct MSA <: AbstractMSA
     seqs::Vector{GappedOlig}
     base_count::Matrix{Float64}
     bootstrap::Int
-    minor_threshold::Float64
 
-    function MSA(seqs::Vector{<:GappedOlig}; minor_threshold::Real=0.0, bootstrap::Int=0, seed=nothing)
-        0 ≤ minor_threshold < 1 || throw(ArgumentError("minor_threshold must be in [0,1)"))
+    function MSA(seqs::Vector{<:GappedOlig}; bootstrap::Int=0, seed=nothing)
         bootstrap >= 0 || throw(ArgumentError("bootstrap must be non-negative"))
         isnothing(seed) || Random.seed!(seed)
 
-        isempty(seqs) && return new(seqs, zeros(4, 0), bootstrap, minor_threshold)
+        isempty(seqs) && return new(seqs, zeros(4, 0), bootstrap)
 
         L = length(first(seqs))
         all(length(s) == L for s in seqs) || throw(ArgumentError("All gapped sequences must have the same length"))
@@ -19,33 +17,7 @@ struct MSA <: AbstractMSA
 
         base_count = zeros(4, L)
         _compute_base_counts!(base_count, seqs, bootstrap, n, L; progress_label="Bootstrap, $bootstrap it.", barlen=19)
-
-        @inbounds if minor_threshold > 0
-            new_seqs = Vector{GappedOlig}(undef, n)
-            Threads.@threads for i in 1:n
-                seq_chars = Vector{Char}(undef, L)
-                for j in 1:L
-                    p = base_count[:, j]
-                    c = seqs[i][j]
-                    if c != '-' && any(>(0.0), p)
-                        idx = findfirst(==(c), NON_DEGEN_BASES)
-                        if !isnothing(idx) && p[idx] < minor_threshold
-                            seq_chars[j] = '-'
-                        else
-                            seq_chars[j] = c
-                        end
-                    else
-                        seq_chars[j] = c
-                    end
-                end
-                new_seqs[i] = GappedOlig(String(seq_chars), description(seqs[i]))
-            end
-
-            fill!(base_count, 0.0)
-            _compute_base_counts!(base_count, new_seqs, bootstrap, n, L; progress_label="Bootstrap (filtered), $bootstrap it.", barlen=8)            
-            return new(new_seqs, base_count, bootstrap, minor_threshold)
-        end
-        return new(seqs, base_count, bootstrap, minor_threshold)
+        return new(seqs, base_count, bootstrap)
     end
 end
 
@@ -242,20 +214,20 @@ function consensus_major(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa)
     return GappedOlig(seq, desc)
 end
 
-function consensus_degen(msa::AbstractMSA, pos::Int)
+function consensus_degen(msa::AbstractMSA, pos::Int; slack::Real=0.0)
+    0 ≤ slack < 1 || throw(ArgumentError("slack must be in [0,1)"))
     p = get_base_count(msa, pos)
     if sum(p) == 0
         return '-'
     end
-    active = findall(>(0), p)
-    if isempty(active)
-        return '-'
-    end
+    active = findall(>(slack), p)
+    isempty(active) && return '-'
     bs = sort!(collect(NON_DEGEN_BASES[active]))
     return IUPAC_V2B[bs]
 end
-function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa))
-    seq = join(consensus_degen(msa, j) for j in interval)
+
+function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa); slack::Real=0.0)
+    seq = join(consensus_degen(msa, j; slack=slack) for j in interval)
     desc = "Degenerate consensus for $(nseqs(msa)) seq MSA"
     return GappedOlig(seq, desc)
 end

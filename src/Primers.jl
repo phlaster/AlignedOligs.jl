@@ -7,6 +7,7 @@ struct Primer <: AbstractOlig
     tm::@NamedTuple{mean::Float64, conf::Tuple{Float64, Float64}}
     dg::Float64
     gc::Float64
+    slack::Float64
 end
 
 function Primer(
@@ -17,8 +18,11 @@ function Primer(
     max_samples::Int=1000,
     tm_conf_int::Real=0.8,
     tm_conds::Symbol=:pcr,
-    dg_temp::Real=37.0
+    dg_temp::Real=37.0,
+    slack::Real=0.0
 )
+    0 ≤ slack ≤ 1 || throw(ArgumentError("slack=$slack, has to be in [0,1]"))
+    0 ≤ dg_temp ≤ 120 || throw(ArgumentError("dg_temp=$dg_temp, which is unrealistic, has to be in [0,120]"))
     thresh = min_tresh(msa)
     gapped_cons = consensus_degen(msa, interval)
     if !is_forward
@@ -42,7 +46,7 @@ function Primer(
     Tm = tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
     dG = dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
     GC = SeqFold.gc_content(underlying_olig)
-    Primer(msa, interval, is_forward, underlying_olig, tail_length, Tm, dG, GC)
+    Primer(msa, interval, is_forward, underlying_olig, tail_length, Tm, dG, GC, slack)
 end
 
 # String interface delegation
@@ -77,8 +81,7 @@ function construct_primers(
     tail_length::Int=3,
     tail_degen_pos::Int=0,
     head_degen_pos::Int=5,
-    head_slack::Float64=0.15,
-    tail_slack::Float64=0.05,
+    slack::Real=0.05,
     gc_range::UnitRange{Int}=40:60,
     tm_range::UnitRange{Int}=55:60,
     min_delta_g::Real=-5.0,
@@ -89,6 +92,7 @@ function construct_primers(
     tm_conds::Symbol=:pcr,
     dg_temp::Real=mean(tm_range)
 )::Vector{Primer}
+    0 ≤ slack < 1 || throw(ArgumentError("slack must be in [0,1)"))
     primers = Primer[]
     L = length(msa)
     base_count = get_base_count(msa)
@@ -111,17 +115,17 @@ function construct_primers(
             end
             if head_len > 0
                 head_freqs = @view base_count[:, head_rng]
-                head_deg = sum(count(>(head_slack), col) > 1 for col in eachcol(head_freqs))
+                head_deg = sum(count(>(slack), col) > 1 for col in eachcol(head_freqs))
                 head_deg > head_degen_pos && continue
             end
             if tail_len > 0
                 tail_freqs = @view base_count[:, tail_rng]
-                tail_deg = sum(count(>(tail_slack), col) > 1 for col in eachcol(tail_freqs))
+                tail_deg = sum(count(>(slack), col) > 1 for col in eachcol(tail_freqs))
                 tail_deg > tail_degen_pos && continue
             end
-            gapped_cons = consensus_degen(msa, rng)
+            gapped_cons = consensus_degen(msa, rng; slack=slack)
             if !is_forward
-                gapped_cons = SeqFold.revcomp(gapped_cons)
+                gapped_cons = revcomp(gapped_cons)
             end
             underlying_olig = try
                 DegenerateOlig(String(gapped_cons), "Primer for $(height(msa))seq MSA")
@@ -144,7 +148,7 @@ function construct_primers(
             Tm = SeqFold.tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
             (tm_range.stop < first(Tm.conf) || last(Tm.conf) < tm_range.start) && continue
             
-            primer = Primer(msa, rng, is_forward, underlying_olig, tail_len, Tm, dg_val, gc)
+            primer = Primer(msa, rng, is_forward, underlying_olig, tail_len, Tm, dg_val, gc, slack)
 
             l = ReentrantLock()
             lock(l)
