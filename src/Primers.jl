@@ -26,7 +26,7 @@ function Primer(
     # thresh = min_tresh(msa)
     gapped_cons = consensus_degen(msa, interval)
     if !is_forward
-        gapped_cons = revcomp(gapped_cons)
+        gapped_cons = SeqFold.revcomp(gapped_cons)
     end
     dir_str = is_forward ? "forward" : "reverse"
     degeneracy = n_deg_pos(gapped_cons) > 0 ? "Degenerate" : "Non degenerate"
@@ -125,7 +125,7 @@ function construct_primers(
             end
             gapped_cons = consensus_degen(msa, rng; slack=slack)
             if !is_forward
-                gapped_cons = revcomp(gapped_cons)
+                gapped_cons = SeqFold.revcomp(gapped_cons)
             end
             underlying_olig = try
                 DegenerateOlig(String(gapped_cons), "Primer for $(height(msa))seq MSA")
