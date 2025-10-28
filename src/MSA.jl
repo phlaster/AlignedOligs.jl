@@ -149,6 +149,24 @@ Base.length(v::MSAView) = length(v.cols)
 width(msa::AbstractMSA) = length(msa)
 height(msa::AbstractMSA) = nseqs(msa)
 
+Base.ndims(::AbstractMSA) = 2
+
+Base.size(msa::AbstractMSA) = (nseqs(msa), length(msa))
+
+Base.size(msa::AbstractMSA, dim::Int) =
+    if dim == 1
+        nseqs(msa)
+    elseif dim == 2
+        length(msa)
+    else
+        throw(ArgumentError("AbstractMSA only has dimensions 1 and 2"))
+    end
+
+Base.axes(msa::AbstractMSA, dim::Int) = Base.OneTo(size(msa, dim))
+
+Base.lastindex(msa::AbstractMSA, dim::Int) = size(msa, dim)
+Base.lastindex(msa::AbstractMSA) = lastindex(msa, ndims(msa))
+
 getsequence(msa::MSA, row::Int) = msa.seqs[row]
 function getsequence(v::MSAView, row::Int)
     abs_row = v.rows.start + row - 1
