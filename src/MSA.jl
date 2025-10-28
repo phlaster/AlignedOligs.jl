@@ -275,3 +275,63 @@ function dry_msa(msa::AbstractMSA; gap_content::Real=1.0)
     end
     return MSA(new_seqs; bootstrap=bval(msa))
 end
+
+function nucleotide_diversity(
+    msa::AbstractMSA;
+    ignore_gaps::Bool = true,
+    max_pairs::Int = 100_000,
+    rng::AbstractRNG = Random.GLOBAL_RNG
+)::Float64
+    n = height(msa)
+    L = width(msa)
+    n < 2 && return 0.0
+    L == 0 && return 0.0
+
+    has_gap = falses(L)
+    if ignore_gaps
+        Threads.@threads for j in 1:L
+            has_gap[j] = any(iszero, get_base_count(msa, j))
+        end
+    end
+
+    total_pairs = n * (n - 1) ÷ 2
+    npairs = min(total_pairs, max_pairs)
+    pair_fraction = npairs / total_pairs
+
+    total_diff = 0.0
+    l = ReentrantLock()
+
+    seq_indices = 1:n
+    pair_count = 0
+
+    prog = Progress(npairs; desc="π diversity...", enabled=npairs > 3000, barlen=15)
+
+    while pair_count < npairs
+        i, j = rand(rng, seq_indices), rand(rng, seq_indices)
+        i == j && continue
+        i, j = minmax(i, j)
+
+        diff = 0.0
+        seq_i = getsequence(msa, i)
+        seq_j = getsequence(msa, j)
+
+        @inbounds for pos in 1:L
+            ignore_gaps && has_gap[pos] && continue
+            c1, c2 = seq_i[pos], seq_j[pos]
+            if c1 == '-' || c2 == '-'
+                ignore_gaps && continue
+            else
+                p_match = sum(min(p1, p2) for (p1, p2) in zip(IUPAC_PROBS[c1], IUPAC_PROBS[c2]))
+                diff += 1.0 - p_match
+            end
+        end
+
+        lock(l) do
+            total_diff += diff
+            pair_count += 1
+            next!(prog)
+        end
+    end
+    π = (total_diff / pair_count) / L * pair_fraction
+    return π
+end
