@@ -296,7 +296,6 @@ function nucleotide_diversity(
 
     total_pairs = n * (n - 1) ÷ 2
     npairs = min(total_pairs, max_pairs)
-    pair_fraction = npairs / total_pairs
 
     total_diff = 0.0
     l = ReentrantLock()
@@ -332,6 +331,6 @@ function nucleotide_diversity(
             next!(prog)
         end
     end
-    π = (total_diff / pair_count) / L * pair_fraction
+    π = (total_diff / pair_count) / L
     return π
 end
