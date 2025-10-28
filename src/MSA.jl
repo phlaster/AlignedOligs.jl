@@ -276,61 +276,67 @@ function dry_msa(msa::AbstractMSA; gap_content::Real=1.0)
     return MSA(new_seqs; bootstrap=bval(msa))
 end
 
-function nucleotide_diversity(
-    msa::AbstractMSA;
-    ignore_gaps::Bool = true,
-    max_pairs::Int = 100_000,
-    rng::AbstractRNG = Random.GLOBAL_RNG
-)::Float64
-    n = height(msa)
-    L = width(msa)
-    n < 2 && return 0.0
+function nucleotide_diversity(msa::AbstractMSA; ignore_gaps::Bool=true, max_pairs::Int=10000)::Float64
+    L = length(msa)
     L == 0 && return 0.0
+    n = nseqs(msa)
+    n < 2 && return 0.0
 
-    has_gap = falses(L)
-    if ignore_gaps
-        Threads.@threads for j in 1:L
-            has_gap[j] = any(iszero, get_base_count(msa, j))
+    total_possible = n * (n - 1) ÷ 2
+    compute_all = n <= 200 || max_pairs >= total_possible
+    npairs = compute_all ? total_possible : min(max_pairs, total_possible)
+
+    pairs = Vector{Tuple{Int,Int}}(undef, npairs)
+    @inbounds if compute_all
+        idx = 1
+        for i in 1:n-1, j in i+1:n
+            pairs[idx] = (i, j)
+            idx += 1
         end
-    end
-
-    total_pairs = n * (n - 1) ÷ 2
-    npairs = min(total_pairs, max_pairs)
-
-    total_diff = 0.0
-    l = ReentrantLock()
-
-    seq_indices = 1:n
-    pair_count = 0
-
-    prog = Progress(npairs; desc="π diversity...", enabled=npairs > 3000, barlen=15)
-
-    while pair_count < npairs
-        i, j = rand(rng, seq_indices), rand(rng, seq_indices)
-        i == j && continue
-        i, j = minmax(i, j)
-
-        diff = 0.0
-        seq_i = getsequence(msa, i)
-        seq_j = getsequence(msa, j)
-
-        @inbounds for pos in 1:L
-            ignore_gaps && has_gap[pos] && continue
-            c1, c2 = seq_i[pos], seq_j[pos]
-            if c1 == '-' || c2 == '-'
-                ignore_gaps && continue
-            else
-                p_match = sum(min(p1, p2) for (p1, p2) in zip(IUPAC_PROBS[c1], IUPAC_PROBS[c2]))
-                diff += 1.0 - p_match
+    else
+        for idx in 1:npairs
+            i, j = rand(1:n), rand(1:n)
+            while i == j
+                i, j = rand(1:n), rand(1:n)
             end
-        end
-
-        lock(l) do
-            total_diff += diff
-            pair_count += 1
-            next!(prog)
+            pairs[idx] = minmax(i, j)
         end
     end
-    π = (total_diff / pair_count) / L
-    return π
+
+    total_diffs = Threads.Atomic{Float64}(0.0)
+    Threads.@threads for (i, j) in pairs
+        d = _pairwise_distance(msa, i, j; ignore_gaps)
+        Threads.atomic_add!(total_diffs, d)
+    end
+
+    return total_diffs[] / npairs
+end
+
+
+function _pairwise_distance(msa::AbstractMSA, i::Int, j::Int; ignore_gaps::Bool=true)::Float64
+    seq_i = getsequence(msa, i)
+    seq_j = getsequence(msa, j)
+    total_sites = 0
+    diff_sum = 0.0
+    for k in 1:length(msa)
+        c_i = seq_i[k]
+        c_j = seq_j[k]
+        if c_i == '-' || c_j == '-' 
+            ignore_gaps && continue
+            # Treat gap as mismatch
+            total_sites += 1
+            diff_sum += 1.0
+            continue
+        end
+        total_sites += 1
+        if c_i == c_j
+            continue  # Exact match
+        end
+        # Probabilistic mismatch for IUPAC/degenerate
+        probs_i = IUPAC_PROBS[c_i]
+        probs_j = IUPAC_PROBS[c_j]
+        match_prob = sum(probs_i .* probs_j)
+        diff_sum += 1.0 - match_prob
+    end
+    total_sites == 0 ? 0.0 : diff_sum / total_sites
 end
