@@ -208,7 +208,7 @@ function msadepth(msa::AbstractMSA)::Vector{Float64}
 end
 
 function msadet(msa::AbstractMSA, pos::Int)::Float64
-    v = view(msa.base_count, :, pos)
+    v = get_base_count(msa, pos)
     s = min(1.0, sum(v))
     s == 0.0 ? 0.0 : maximum(v) / s
 end
