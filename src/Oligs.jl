@@ -4,7 +4,7 @@ struct Olig <: AbstractOlig
     seq::String
     description::String
 
-    function Olig(seq::AbstractString, description = "")
+    function Olig(seq::AbstractString, description::Union{AbstractString, Integer}="")
         isempty(seq) && return new("", "")
         seq = uppercase(seq)
         seq_chars = Set(seq)
@@ -37,7 +37,7 @@ end
 
 DegenerateOlig() = EMPTY_OLIG
 
-function DegenerateOlig(seq::AbstractString, descr = "")
+function DegenerateOlig(seq::AbstractString, descr::Union{AbstractString, Integer} = "")
     isempty(seq) && return DegenerateOlig()
 
     seq = uppercase(seq)
