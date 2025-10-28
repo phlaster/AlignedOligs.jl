@@ -177,7 +177,7 @@ function best_pairs(
     all(root(p.msa) == anymsa for p in forwards) || throw(ArgumentError("All primers must refer to the same MSA"))
     all(root(p.msa) == anymsa for p in reverses) || throw(ArgumentError("All primers must refer to the same MSA"))
     
-    @showprogress desc="Matching primer pairs..." barlen=10 for f in forwards
+    @showprogress desc="Matching primer pairs..." enabled=(length(forwards)>1000) barlen=10 for f in forwards
         for r in reverses
             if f.pos.stop >= r.pos.start
                 # overlapping primers
