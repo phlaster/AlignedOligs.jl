@@ -243,6 +243,25 @@ function Base.show(io::IO, ::MIME"text/plain", pp::Pair{Primer})
     end
 end
 
+const BASE_COLORS = Dict{Char, Symbol}(
+    'A' => :green,
+    'C' => :blue,
+    'G' => :yellow,
+    'T' => :red,
+    'M' => :light_cyan,   # A/C
+    'R' => :light_green,  # A/G
+    'W' => :light_green,  # A/T
+    'S' => :light_blue,   # C/G
+    'Y' => :light_magenta,# C/T
+    'K' => :light_red,    # G/T
+    'V' => :cyan,         # A/C/G
+    'H' => :magenta,      # A/C/T
+    'D' => :green,        # A/G/T
+    'B' => :blue,         # C/G/T
+    'N' => :white,
+    '-' => :normal
+)
+
 function Base.show(io::IO, msa::AbstractMSA)
     n_sequences = nseqs(msa)
     if n_sequences == 0
@@ -261,93 +280,91 @@ function Base.show(io::IO, msa::AbstractMSA)
     catch
         terminal_height, terminal_width = 24, 80
     end
-    max_display_height = max(5, terminal_height - 5)
-    max_display_width = max(20, terminal_width - 10)
+    max_display_height = max(5, terminal_height - 7)
+    n_display_seqs = min(n_sequences, max_display_height)
 
-    if seq_length <= max_display_width
-        println(io, ":")
-        if n_sequences <= max_display_height
-            for i in 1:n_sequences
-                println(io, getsequence(msa, i))
-            end
-        else
-            n_first = max_display_height ÷ 2
-            n_last = max_display_height - n_first - 1
-            n_first = min(n_first, n_sequences)
-            n_last = min(n_last, n_sequences)
-            n_last = min(n_last, n_sequences - n_first)
+    # Collect and process descriptions for displayed sequences
+    processed_descs = Vector{String}(undef, n_display_seqs)
+    has_desc = false
+    for i in 1:n_display_seqs
+        desc = description(getsequence(msa, i))
+        processed = replace(replace(desc, '\n' => ' '), '\t' => ' ')
+        processed_descs[i] = processed
+        if !isempty(processed)
+            has_desc = true
+        end
+    end
 
-            for i in 1:n_first
-                println(io, getsequence(msa, i))
-            end
-            if n_first + n_last < n_sequences
-                println(io, "⋅⋅⋅")
-            end
-            start_idx_last = max(n_first + 1, n_sequences - n_last + 1)
-            for i in start_idx_last:n_sequences
-                if i > 0 && i <= n_sequences
-                    println(io, getsequence(msa, i))
-                end
-            end
+    desc_width = 0
+    padded_descs = String[]
+    if has_desc
+        max_possible_desc = min(50, floor(Int, 0.2 * terminal_width))
+        max_desc_len = maximum(length, processed_descs)
+        desc_width = min(max_possible_desc, max_desc_len)
+        padded_descs = Vector{String}(undef, n_display_seqs)
+        for i in 1:n_display_seqs
+            trunc = processed_descs[i][1:min(end, desc_width)]
+            padded_descs[i] = rpad(trunc, desc_width)
+        end
+        desc_width += 2  # for separator
+    end
+
+    max_display_width = max(20, terminal_width - desc_width - 7)
+
+    needs_width_ellipsis = seq_length > max_display_width
+    max_seq_chars = needs_width_ellipsis ? max_display_width - 3 : max_display_width
+    displayed_cols_range = 1:min(seq_length, max_seq_chars)
+
+    # Compute absolute columns if MSAView
+    abs_cols = if msa isa MSAView
+        msa.cols.start .+ (displayed_cols_range .- 1)
+    else
+        displayed_cols_range
+    end
+
+    # Compute bold_vec for displayed columns
+    bold_vec = Vector{Bool}(undef, length(displayed_cols_range))
+    if _is_full_height(msa)
+        for dj in 1:length(displayed_cols_range)
+            det = msadet(msa, dj)
+            bold_vec[dj] = det < 1.0 && det > 0.0
         end
     else
-        println(io, ":")
-        half_width = max_display_width ÷ 2 - 2
-        half_width = max(1, half_width)
-
-        if n_sequences <= max_display_height
+        for dj in 1:length(displayed_cols_range)
+            pos_counts = zeros(Float64, 4)
             for i in 1:n_sequences
-                seq_str = string(getsequence(msa, i))
-                seq_len = length(seq_str)
-                if seq_len <= max_display_width
-                    println(io, seq_str)
-                else
-                    start_end_idx = max(1, min(half_width, seq_len))
-                    end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
-                    start_part = seq_str[1:start_end_idx]
-                    end_part = seq_str[end_start_idx:end]
-                    println(io, start_part * "⋅⋅⋅" * end_part)
-                end
+                c = getsequence(msa, i, dj)
+                probs = IUPAC_PROBS[c]
+                pos_counts .+= probs
             end
-        else
-            n_first = max_display_height ÷ 2
-            n_last = max_display_height - n_first - 1
-            n_first = min(n_first, n_sequences)
-            n_last = min(n_last, n_sequences)
-            n_last = min(n_last, n_sequences - n_first)
-
-            for i in 1:n_first
-                 seq_str = string(getsequence(msa, i))
-                 seq_len = length(seq_str)
-                 if seq_len <= max_display_width
-                     println(io, seq_str)
-                 else
-                     start_end_idx = max(1, min(half_width, seq_len))
-                     end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
-                     start_part = seq_str[1:start_end_idx]
-                     end_part = seq_str[end_start_idx:end]
-                     println(io, start_part * "⋅⋅⋅" * end_part)
-                 end
-            end
-
-            if n_first + n_last < n_sequences
-                println(io, " " ^ half_width * " ⋮ ")
-            end
-
-            start_idx_last = max(n_first + 1, n_sequences - n_last + 1)
-            for i in start_idx_last:n_sequences
-                seq_str = string(getsequence(msa, i))
-                seq_len = length(seq_str)
-                if seq_len <= max_display_width
-                    println(io, seq_str)
-                else
-                    start_end_idx = max(1, min(half_width, seq_len))
-                    end_start_idx = max(start_end_idx + 1, seq_len - half_width + 1)
-                    start_part = seq_str[1:start_end_idx]
-                    end_part = seq_str[end_start_idx:end]
-                    println(io, start_part * "⋅⋅⋅" * end_part)
-                end
+            s = sum(pos_counts)
+            bold_vec[dj] = false
+            if s > 0.0
+                det = maximum(pos_counts) / s
+                bold_vec[dj] = det < 1.0
             end
         end
+    end
+
+    println(io, ":")
+
+    for i in 1:n_display_seqs
+        if has_desc
+            print(io, padded_descs[i], " >")
+        end
+        for dj in 1:length(displayed_cols_range)
+            c = getsequence(msa, i, dj)
+            col = get(BASE_COLORS, c, :normal)
+            bold = bold_vec[dj]
+            printstyled(io, c; color=col, bold=bold, reverse=true)
+        end
+        if needs_width_ellipsis
+            printstyled(io, "..."; color=:light_black, reverse=true)
+        end
+        println(io)
+    end
+
+    if n_display_seqs < n_sequences
+        println(io, "...")
     end
 end
