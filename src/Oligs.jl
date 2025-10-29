@@ -169,7 +169,6 @@ function Base.getindex(go::GappedOlig, r::UnitRange{Int})
     @boundscheck checkbounds(1:length(go), r)
     return OligView(go, r)
 end
-
 function Base.getindex(ov::OligView, i::Int)
     @boundscheck checkbounds(1:length(ov), i)
     return ov.parent[ov.range.start + i - 1]
@@ -385,7 +384,7 @@ function Base.rand(rng::AbstractRNG, ov::OligView)
     descr = string("Random non-degen sample from $(olig_range(ov)) OligView of: ", description(ov))
     return Olig(String(parent_olig)[olig_range(ov)], descr)
 end
-Base.rand(rng::AbstractRNG, go::GappedOlig) = go
+Base.rand(::AbstractRNG, go::GappedOlig) = go
 Base.rand(olig::AbstractOlig) = rand(Random.GLOBAL_RNG, olig)
 
 function Base.iterate(go::GappedOlig)

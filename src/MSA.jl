@@ -152,8 +152,7 @@ height(msa::AbstractMSA) = nseqs(msa)
 Base.ndims(::AbstractMSA) = 2
 
 Base.size(msa::AbstractMSA) = (nseqs(msa), length(msa))
-
-Base.size(msa::AbstractMSA, dim::Int) =
+Base.size(msa::AbstractMSA, dim::Int) = begin
     if dim == 1
         nseqs(msa)
     elseif dim == 2
@@ -161,6 +160,7 @@ Base.size(msa::AbstractMSA, dim::Int) =
     else
         throw(ArgumentError("AbstractMSA only has dimensions 1 and 2"))
     end
+end
 
 Base.axes(msa::AbstractMSA, dim::Int) = Base.OneTo(size(msa, dim))
 
@@ -193,9 +193,7 @@ function get_base_count(msav::MSAView, interval::UnitRange{Int})
     abs_interval = abs_start:(abs_start + length(interval) - 1)
     return @view root(msav).base_count[:, abs_interval]
 end
-function get_base_count(msav::MSAView)
-    return get_base_count(msav, 1:length(msav))
-end
+get_base_count(msav::MSAView) = get_base_count(msav, 1:length(msav))
 
 function msadepth(msa::AbstractMSA, pos::Int)::Float64
     min(1.0, sum(view(msa.base_count, :, pos)))
@@ -243,7 +241,6 @@ function consensus_degen(msa::AbstractMSA, pos::Int; slack::Real=0.0)
     bs = sort!(collect(NON_DEGEN_BASES[active]))
     return IUPAC_V2B[bs]
 end
-
 function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa); slack::Real=0.0)
     seq = join(consensus_degen(msa, j; slack=slack) for j in interval)
     desc = "Degenerate consensus for $(nseqs(msa)) seq MSA"

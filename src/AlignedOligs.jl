@@ -17,7 +17,6 @@ using Statistics
 using ProgressMeter
 
 @reexport using SeqFold
-using SeqFold: Structure
 
 export AbstractOlig, Olig, DegenerateOlig, OligView, GappedOlig
 export n_unique_oligs, n_deg_pos, nondegens, description, hasgaps
