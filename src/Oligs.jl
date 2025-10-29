@@ -16,7 +16,6 @@ struct Olig <: AbstractOlig
 end
 
 const EMPTY_OLIG = Olig("", "")
-
 Olig() = EMPTY_OLIG
 
 Olig(chars::Vector{Char}, descr::AbstractString = "") = Olig(String(chars), descr)
@@ -34,8 +33,8 @@ struct DegenerateOlig <: AbstractOlig
     n_unique_oligs::BigInt
     description::String
 end
-
-DegenerateOlig() = EMPTY_OLIG
+const EMPTY_DEGENERATE = DegenerateOlig("", 0, 1, "")
+DegenerateOlig() = EMPTY_DEGENERATE
 
 function DegenerateOlig(seq::AbstractString, descr::Union{AbstractString, Integer} = "")
     isempty(seq) && return DegenerateOlig()
@@ -84,8 +83,8 @@ struct GappedOlig{T<:Union{Olig,DegenerateOlig}} <: AbstractOlig
         return new{T}(parent, sorted_gaps, total_length)
     end
 end
-
-GappedOlig() = EMPTY_OLIG
+const EMPTY_GAPPED = GappedOlig(Olig(), Pair{Int}[])
+GappedOlig() = EMPTY_GAPPED
 
 function GappedOlig(seq::AbstractString, descr::AbstractString = "")
     parent_seq = filter(c -> c != '-', seq)
@@ -293,22 +292,53 @@ n_deg_pos(d::DegenerateOlig) = d.n_deg_pos
 n_deg_pos(ov::OligView) = count(char -> char in DEGEN_BASES, ov)
 n_deg_pos(go::GappedOlig) = n_deg_pos(parent(go))
 
-function Base.:*(o1::AbstractOlig, o2::AbstractOlig)
-    if hasgaps(o1) || hasgaps(o2)
-        throw(ErrorException("Concatenation not implemented for gapped oligs"))
+function Base.convert(::Type{T}, o::AbstractOlig) where {T<:AbstractOlig}
+    if T === typeof(o)
+        return o
     end
-    if n_deg_pos(o1) > 0 || n_deg_pos(o2) > 0
-        return DegenerateOlig(String(o1) * String(o2), n_deg_pos(o1)+n_deg_pos(o2), n_unique_oligs(o1)*n_unique_oligs(o2), "concat")
+    
+    if T <: Union{Olig, DegenerateOlig} && !(o isa Union{GappedOlig, OligView{<:GappedOlig}})
+        if T == Olig
+            return Olig(String(o), description(o))
+        elseif T == DegenerateOlig
+            return DegenerateOlig(String(o), n_deg_pos(o), n_unique_oligs(o), description(o))
+        else
+            throw(InexactError(:convert, T, o))
+        end
+    elseif T <: GappedOlig && o isa GappedOlig
+        target_param = T.parameters[1]
+        if target_param == Olig && n_deg_pos(o.parent) == 0
+            return GappedOlig(convert(Olig, o.parent), o.gaps)
+        elseif target_param == DegenerateOlig
+            return GappedOlig(convert(DegenerateOlig, o.parent), o.gaps)
+        else
+            throw(InexactError(:convert, T, o))
+        end
     else
-        return Olig(String(o1) * String(o2), "concat")
+        throw(MethodError(convert, (T, o)))
     end
 end
 
-Base.convert(::Olig, o::AbstractOlig) = Olig(o)
-Base.convert(::Type{DegenerateOlig}, o::AbstractOlig) = DegenerateOlig(o)
-Base.promote_rule(::Type{Olig}, ::Type{DegenerateOlig}) = DegenerateOlig
-Base.promote_rule(::Type{Olig}, ::Type{GappedOlig}) = GappedOlig
-Base.promote_rule(::Type{DegenerateOlig}, ::Type{GappedOlig}) = DegenerateOlig
+_base_olig_type(::Type{T}) where {T<:Olig} = Olig
+_base_olig_type(::Type{T}) where {T<:DegenerateOlig} = DegenerateOlig
+_base_olig_type(::Type{GappedOlig{U}}) where {U} = _base_olig_type(U)
+_base_olig_type(::Type{OligView{U}}) where {U} = _base_olig_type(U)
+_base_olig_type(::Type{T}) where {T<:AbstractOlig} = T  # fallback
+
+_is_degenerate_type(::Type{T}) where {T<:Olig} = false
+_is_degenerate_type(::Type{T}) where {T<:DegenerateOlig} = true
+_is_degenerate_type(::Type{GappedOlig{U}}) where {U} = _is_degenerate_type(U)
+_is_degenerate_type(::Type{OligView{U}}) where {U} = _is_degenerate_type(U)
+_is_degenerate_type(::Type{T}) where {T<:AbstractOlig} = false
+
+_has_gaps_type(::Type{T}) where {T<:AbstractOlig} = T <: Union{GappedOlig, OligView{<:GappedOlig}}
+function _promote_olig_type(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig}
+    result_base = _is_degenerate_type(T1) || _is_degenerate_type(T2) ? DegenerateOlig : Olig
+    return _has_gaps_type(T1) || _has_gaps_type(T2) ? GappedOlig{result_base} : result_base
+end
+
+Base.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig} = 
+    _promote_olig_type(T1, T2)
 
 function Base.iterate(iter::NonDegenIterator)
     olig = parent(iter)
