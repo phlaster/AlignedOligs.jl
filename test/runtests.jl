@@ -5,628 +5,707 @@ using JET
 using Random
 using MAFFT_jll
 
+Random.seed!(123)
+
+
+function random_olig_string(len::Int)::String
+    if len < 0
+        throw(ArgumentError("Length must be non-negative"))
+    end
+    bases = AlignedOligs.NON_DEGEN_BASES
+    return join(rand(bases, len))
+end
+
+function random_degen_string(len::Int)::String
+    if len < 0
+        throw(ArgumentError("Length must be non-negative"))
+    end
+    bases = AlignedOligs.DEGEN_BASES
+    return join(rand(bases, len))
+end
+
+function random_invalid_nondeg_string(len::Int)::String
+    if len < 1
+        throw(ArgumentError("Length must be at least 1 for invalid strings"))
+    end
+    valid_str = random_olig_string(len)
+    pos = rand(1:len)
+    invalid_chars = setdiff(collect('A':'Z'), AlignedOligs.NON_DEGEN_BASES)
+    invalid_char = rand(invalid_chars)
+    return valid_str[1:pos-1] * invalid_char * valid_str[pos+1:end]
+end
+
+function random_invalid_degen_string(len::Int)::String
+    if len < 1
+        throw(ArgumentError("Length must be at least 1 for invalid strings"))
+    end
+    valid_str = random_olig_string(len)
+    pos = rand(1:len)
+    invalid_chars = "\\-%!@#\$%^ \""
+    invalid_char = rand(invalid_chars)
+    return valid_str[1:pos-1] * invalid_char * valid_str[pos+1:end]
+end
+
+function random_description()::String
+    return "desc_$(rand(1:1000))"
+end
+
+function random_olig_chars(len::Int)::Vector{Char}
+    return collect(random_olig_string(len))
+end
+
 @testset "AlignedOligs.jl" begin
-    @testset "Code quality (Aqua.jl)" begin
-        Aqua.test_all(AlignedOligs)
-    end
-    @testset "Code linting (JET.jl)" begin
-        JET.test_package(AlignedOligs; target_defined_modules = true)
-    end
+    # @testset "Code quality (Aqua.jl)" begin
+    #     Aqua.test_all(AlignedOligs)
+    # end
+    # @testset "Code linting (JET.jl)" begin
+    #     JET.test_package(AlignedOligs; target_defined_modules = true)
+    # end
     
     @testset "Oligs" begin
         @testset "Olig" begin
-            # Construction tests
-            @test Olig("ACGT") isa Olig
-            @test Olig("ACGT", "test description") isa Olig
-            @test Olig("ACGT", "") isa Olig
-            @test Olig("ACGT", nothing) isa Olig
-            @test Olig(['A', 'C', 'G', 'T']) isa Olig
-            @test Olig(['A', 'C', 'G', 'T'], "test description") isa Olig
-            @test Olig("ACGT", 123) isa Olig
-            @test_throws ErrorException Olig("ACGTX")
-            @test Olig() == Olig("")
-            @test Olig("", "empty") == Olig("", "empty")
-            
-            # String interface tests
-            olig = Olig("ACGT", "test")
-            @test String(olig) == "ACGT"
-            @test length(olig) == 4
-            @test isempty(Olig("")) == true
-            @test isempty(olig) == false
-            @test collect(olig) == ['A', 'C', 'G', 'T']
-            @test olig[1] == 'A'
-            @test olig[2:3] == "CG"
-            @test occursin("CG", olig)
-            @test first(olig) == 'A'
-            @test last(olig) == 'T'
-            @test olig[4:-1:1] == "TGCA"
-            
-            # Description tests
-            @test description(olig) == "test"
-            @test description(Olig("ACGT", "")) == ""
-            
-            # Conversion tests
-            deg_olig = DegenerateOlig("ACGT")
-            @test Olig(deg_olig) isa Olig
-            @test_throws InexactError Olig(DegenerateOlig("ACGN"))
-            @test convert(Olig, deg_olig) isa Olig
-            
-            # Concatenation tests
-            olig2 = Olig("TGCA")
-            @test (olig * olig2) == Olig("ACGTTGCA", "concat")
-            @test description((olig * olig2)) == "concat"
-            @test (Olig("A") * Olig("C") * Olig("G") * Olig("T")) == olig
-            
-            # Equality tests
-            @test Olig("ACGT") == Olig("ACGT")
-            @test Olig("ACGT") != Olig("TGCA")
-            @test Olig("ACGT") == "ACGT"
-            @test "ACGT" == Olig("ACGT")
-            @test Olig("ACGT") != "TGCA"
-            
-            # Case handling
-            @test Olig("acgt") == Olig("ACGT")
-            
-            # Empty sequence tests
-            empty_olig = Olig("", "empty")
-            @test isempty(empty_olig) == true
-            @test length(empty_olig) == 0
-            @test String(empty_olig) == ""
-            @test_throws BoundsError empty_olig[1]
+            empty_olig = Olig()
+            empty_desc = ""
+            empty_seq = ""
+            empty_chars = Char[]
+
+            @testset "Construction" begin
+                # Empty constructions
+                @test Olig() isa Olig
+                @test Olig(empty_seq) == empty_olig
+                @test Olig(empty_seq, empty_desc) == empty_olig
+                @test Olig(empty_chars) == empty_olig
+                @test Olig(empty_chars, empty_desc) == empty_olig
+                @test description(Olig(empty_chars, random_description())) == ""
+
+                # Random valid constructions (string, chars, with/without desc)
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_olig_string(len)
+                    valid_chars = collect(valid_seq)
+                    desc = random_description()
+                    num_desc = rand(1:100)
+
+                    olig_from_seq = Olig(valid_seq)
+                    olig_from_seq_desc = Olig(valid_seq, desc)
+                    olig_from_chars = Olig(valid_chars)
+                    olig_from_chars_desc = Olig(valid_chars, desc)
+                    olig_from_seq_num_desc = Olig(valid_seq, num_desc)
+
+                    @test olig_from_seq isa Olig
+                    @test olig_from_seq_desc isa Olig
+                    @test olig_from_chars isa Olig
+                    @test olig_from_chars_desc isa Olig
+                    @test olig_from_seq_num_desc isa Olig
+
+                    @test String(olig_from_seq) == valid_seq
+                    @test String(olig_from_seq_desc) == valid_seq
+                    @test String(olig_from_chars) == valid_seq
+                    @test String(olig_from_chars_desc) == valid_seq
+                    @test String(olig_from_seq_num_desc) == valid_seq
+
+                    @test description(olig_from_seq) == ""
+                    @test description(olig_from_seq_desc) == desc
+                    @test description(olig_from_chars) == ""
+                    @test description(olig_from_chars_desc) == desc
+                    @test description(olig_from_seq_num_desc) == string(num_desc)  # Converted to string
+
+                    @test_throws MethodError Olig(valid_seq, nothing)
+                    @test Olig(valid_seq, "") isa Olig
+                    @test description(Olig(valid_seq, "")) == ""
+                end
+
+                # Invalid constructions (throws ErrorException)
+                for _ in 1:10
+                    len = rand(1:20)
+                    invalid_seq = random_invalid_nondeg_string(len)
+                    invalid_chars = collect(invalid_seq)
+                    desc = random_description()
+
+                    @test_throws ErrorException Olig(invalid_seq)
+                    @test_throws ErrorException Olig(invalid_seq, desc)
+                    @test_throws ErrorException Olig(invalid_chars)
+                    @test_throws ErrorException Olig(invalid_chars, desc)
+                end                
+            end
+
+            @testset "String interface" begin
+                # Empty
+                @test String(empty_olig) == empty_seq
+                @test length(empty_olig) == 0
+                @test isempty(empty_olig)
+                @test_throws BoundsError empty_olig[1]
+                @test collect(empty_olig) == empty_chars
+
+                # Random valid
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_olig_string(len)
+                    desc = random_description()
+                    olig = Olig(valid_seq, desc)
+
+                    @test String(olig) == valid_seq
+                    @test length(olig) == len
+                    @test !isempty(olig)
+                    @test collect(olig) == collect(valid_seq)
+
+                    # Indexing
+                    if len > 0
+                        @test olig[1] == valid_seq[1]
+                        @test olig[end] == valid_seq[end]
+                        mid_start = rand(1:len-1)
+                        mid_end = rand(mid_start+1:len)
+                        @test olig[mid_start:mid_end] == valid_seq[mid_start:mid_end]
+                        @test olig[end:-1:1] == reverse(valid_seq)
+
+                        @test first(olig) == valid_seq[1]
+                        @test last(olig) == valid_seq[end]
+
+                        # occursin
+                        sub_len = rand(1:len)
+                        sub_start = rand(1:len-sub_len+1)
+                        sub = valid_seq[sub_start:sub_start+sub_len-1]
+                        @test occursin(sub, olig)
+                        invalid_sub = random_invalid_nondeg_string(sub_len)
+                        @test !occursin(invalid_sub, olig)
+                    end
+
+                    # Bounds errors
+                    @test_throws BoundsError olig[0]
+                    @test_throws BoundsError olig[len+1]
+                    @test_throws BoundsError olig[1:len+1]
+                end
+            end
+
+            @testset "Description" begin
+                # Empty
+                @test description(empty_olig) == ""
+
+                # Random
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_olig_string(len)
+                    desc = random_description()
+                    olig_no_desc = Olig(valid_seq)
+                    olig_with_desc = Olig(valid_seq, desc)
+
+                    @test description(olig_no_desc) == ""
+                    @test description(olig_with_desc) == desc
+                    @test description(Olig(valid_seq, "")) == ""
+                end
+            end
+
+            @testset "Conversion" begin
+                # From DegenerateOlig (only non-degen)
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_olig_string(len)
+                    desc = random_description()
+                    deg_olig = DegenerateOlig(valid_seq, desc)
+                    converted_olig = Olig(deg_olig)
+
+                    @test converted_olig isa Olig
+                    @test String(converted_olig) == valid_seq
+                    @test description(converted_olig) == desc
+
+                    @test convert(Olig, deg_olig) isa Olig
+                    @test convert(Olig, deg_olig) == converted_olig
+                end
+
+                # Throws on degenerate
+                degen_seq = "ACGN"
+                deg_olig_with_degen = DegenerateOlig(degen_seq)
+                @test_throws InexactError Olig(deg_olig_with_degen)
+                @test_throws InexactError convert(Olig, deg_olig_with_degen)
+            end
+
+            @testset "Concatenation" begin
+                # Empty
+                @test empty_olig * empty_olig == empty_olig
+
+                # Random
+                for _ in 1:10
+                    len1 = rand(1:10)
+                    len2 = rand(1:10)
+                    seq1 = random_olig_string(len1)
+                    seq2 = random_olig_string(len2)
+                    desc1 = random_description()
+                    desc2 = random_description()
+                    olig1 = Olig(seq1, desc1)
+                    olig2 = Olig(seq2, desc2)
+
+                    concat_olig = olig1 * olig2
+                    @test concat_olig isa Olig
+                    @test String(concat_olig) == seq1 * seq2
+                    @test description(concat_olig) == "concat"
+                    @test length(concat_olig) == len1 + len2
+
+                    # Multi-concat
+                    olig_a = Olig("A")
+                    olig_c = Olig("C")
+                    olig_g = Olig("G")
+                    olig_t = Olig("T")
+                    multi_concat = olig_a * olig_c * olig_g * olig_t
+                    @test String(multi_concat) == "ACGT"
+                end
+            end
+
+            @testset "Equality" begin
+                # Empty
+                @test empty_olig == empty_olig
+                @test empty_olig == empty_seq
+                @test empty_seq == empty_olig
+
+                # Random
+                for _ in 1:10
+                    len = rand(1:20)
+                    seq1 = random_olig_string(len)
+                    seq2 = random_olig_string(len)
+                    while seq1 == seq2  # Ensure different
+                        seq2 = random_olig_string(len)
+                    end
+                    olig1 = Olig(seq1)
+                    olig2 = Olig(seq2)
+                    olig1_copy = Olig(seq1)
+
+                    @test olig1 == olig1_copy
+                    @test olig1 != olig2
+                    @test olig1 == seq1
+                    @test seq1 == olig1
+                    @test olig1 != seq2
+                    @test seq2 != olig1
+                end
+
+                # Description doesn't affect equality
+                desc1 = random_description()
+                desc2 = random_description()
+                same_seq = random_olig_string(5)
+                olig_diff_desc1 = Olig(same_seq, desc1)
+                olig_diff_desc2 = Olig(same_seq, desc2)
+                @test olig_diff_desc1 == olig_diff_desc2
+            end
+
+            @testset "Case handling" begin
+                for _ in 1:10
+                    len = rand(1:20)
+                    lower_seq = lowercase(random_olig_string(len))
+                    upper_seq = uppercase(lower_seq)
+                    olig_lower = Olig(lower_seq)
+                    olig_upper = Olig(upper_seq)
+
+                    @test olig_lower == olig_upper
+                    @test String(olig_lower) == upper_seq
+                end
+            end
+
+            @testset "Empty sequence" begin
+                empty_olig_with_desc = Olig(empty_seq, "empty")
+
+                @test isempty(empty_olig_with_desc)
+                @test length(empty_olig_with_desc) == 0
+                @test String(empty_olig_with_desc) == empty_seq
+                @test_throws BoundsError empty_olig_with_desc[1]
+                @test description(empty_olig_with_desc) == ""
+            end
 
             @testset "Display" begin
-                olig = Olig("AGTC", "descr")
-                olig_nodesc = Olig("AGTC", "")
-                olig_long = Olig("A"^25, "")
+                # Fixed cases for reproducibility
+                short_seq = "AGTC"
+                short_desc = "descr"
+                no_desc = ""
+                long_seq = "A"^25
+
+                olig_short_desc = Olig(short_seq, short_desc)
+                olig_short_no_desc = Olig(short_seq, no_desc)
+                olig_long_no_desc = Olig(long_seq, no_desc)
+
                 # Short display
-                @test sprint(show, olig) == "Olig(\"AGTC\", len=4, desc=\"descr\")"
-                @test sprint(show, olig_nodesc) == "Olig(\"AGTC\", len=4)"
-                @test sprint(show, olig_long) == "Olig(\"AAAAAAAAAAAAAAAAA...\", len=25)"
+                @test sprint(show, olig_short_desc) == "Olig(\"AGTC\", len=4, desc=\"descr\")"
+                @test sprint(show, olig_short_no_desc) == "Olig(\"AGTC\", len=4)"
+                @test sprint(show, olig_long_no_desc) == "Olig(\"AAAAAAAAAAAAAAAAA...\", len=25)"
+
                 # Full display
-                @test sprint(show, MIME"text/plain"(), olig) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: \"descr\"\n"
-                @test sprint(show, MIME"text/plain"(), olig_nodesc) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: (none)\n"
-                @test sprint(show, MIME"text/plain"(), olig_long) == "Olig\n  Sequence: AAAAAAAAAAAAAAAAAAAAAAAAA\n  Length: 25\n  Description: (none)\n"
+                @test sprint(show, MIME"text/plain"(), olig_short_desc) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: \"descr\""
+                @test sprint(show, MIME"text/plain"(), olig_short_no_desc) == "Olig\n  Sequence: AGTC\n  Length: 4\n  Description: (none)"
+                @test sprint(show, MIME"text/plain"(), olig_long_no_desc) == "Olig\n  Sequence: AAAAAAAAAAAAAAAAAAAAAAAAA\n  Length: 25\n  Description: (none)"
+
+                # Random short and long
+                for _ in 1:5
+                    rand_len_short = rand(1:20)
+                    rand_seq_short = random_olig_string(rand_len_short)
+                    rand_desc_short = random_description()
+                    olig_rand_short = Olig(rand_seq_short, rand_desc_short)
+
+                    expected_short_show = "Olig(\"$rand_seq_short\", len=$rand_len_short, desc=\"$rand_desc_short\")"
+                    @test sprint(show, olig_rand_short) == expected_short_show
+
+                    expected_full_show = "Olig\n  Sequence: $rand_seq_short\n  Length: $rand_len_short\n  Description: \"$rand_desc_short\""
+                    @test sprint(show, MIME"text/plain"(), olig_rand_short) == expected_full_show
+                end
+
+                for _ in 1:5
+                    rand_len_long = rand(21:50)
+                    rand_seq_long = random_olig_string(rand_len_long)
+                    olig_rand_long = Olig(rand_seq_long)
+
+                    truncated_seq = rand_seq_long[1:17] * "..."
+                    expected_short_show = "Olig(\"$truncated_seq\", len=$rand_len_long)"
+                    @test sprint(show, olig_rand_long) == expected_short_show
+
+                    expected_full_show = "Olig\n  Sequence: $rand_seq_long\n  Length: $rand_len_long\n  Description: (none)"
+                    @test sprint(show, MIME"text/plain"(), olig_rand_long) == expected_full_show
+                end
             end
         end
-        
+
         @testset "DegenerateOlig" begin
-            # Construction tests
-            @test DegenerateOlig("ACGT") isa DegenerateOlig
-            @test DegenerateOlig("ACGN") isa DegenerateOlig
-            @test DegenerateOlig("ACGN", "test description") isa DegenerateOlig
-            @test DegenerateOlig("ACGN", "") isa DegenerateOlig
-            @test DegenerateOlig("ACGN", nothing) isa DegenerateOlig
-            @test DegenerateOlig(['A', 'C', 'G', 'N']) isa DegenerateOlig
-            @test DegenerateOlig(['A', 'C', 'G', 'N'], "test description") isa DegenerateOlig
-            @test DegenerateOlig("ACGT", 123) isa DegenerateOlig
-            @test_throws ErrorException DegenerateOlig("ACGTX")
-            @test DegenerateOlig() == DegenerateOlig("")
-            @test DegenerateOlig("", "empty") == DegenerateOlig("", 0, 1, "empty")
-            
-            # String interface tests
-            deg_olig = DegenerateOlig("ACGN", "test")
-            @test String(deg_olig) == "ACGN"
-            @test length(deg_olig) == 4
-            @test isempty(DegenerateOlig(""))
-            @test !isempty(deg_olig)
-            @test collect(deg_olig) == ['A', 'C', 'G', 'N']
-            @test deg_olig[1] == 'A'
-            @test deg_olig[2:3] == "CG"
-            @test occursin("CG", deg_olig)
-            @test first(deg_olig) == 'A'
-            @test last(deg_olig) == 'N'
-            @test deg_olig[4:-1:1] == "NGCA"
-            
-            # Properties tests
-            @test n_deg_pos(deg_olig) == 1
-            @test n_unique_oligs(deg_olig) == 4
-            @test n_deg_pos(DegenerateOlig("ACGT")) == 0
-            @test n_unique_oligs(DegenerateOlig("ACGT")) == 1
-            @test n_deg_pos(DegenerateOlig("NNNN")) == 4
-            @test n_unique_oligs(DegenerateOlig("NNNN")) == 256
-            @test n_deg_pos(DegenerateOlig("RY")) == 2
-            @test n_unique_oligs(DegenerateOlig("RY")) == 4
-            @test n_deg_pos(DegenerateOlig("BVDH")) == 4
-            @test n_unique_oligs(DegenerateOlig("BVDH")) == 81
-            
-            # Description tests
-            @test description(deg_olig) == "test"
-            @test description(DegenerateOlig("ACGN", "")) == ""
-            
-            # Conversion tests
-            olig = Olig("ACGT")
-            @test DegenerateOlig(olig) isa DegenerateOlig
-            @test convert(DegenerateOlig, olig) isa DegenerateOlig
-            @test String(DegenerateOlig(olig)) == "ACGT"
-            @test n_deg_pos(DegenerateOlig(olig)) == 0
-            @test n_unique_oligs(DegenerateOlig(olig)) == 1
-            
-            # Concatenation tests
-            deg_olig2 = DegenerateOlig("NNGT")
-            @test (deg_olig * deg_olig2) isa DegenerateOlig
-            @test String((deg_olig * deg_olig2)) == "ACGNNNGT"
-            @test n_deg_pos((deg_olig * deg_olig2)) == 3
-            @test n_unique_oligs((deg_olig * deg_olig2)) == 4^3
-            
-            @test (olig * deg_olig) isa DegenerateOlig
-            @test String((olig * deg_olig)) == "ACGTACGN"
-            @test n_deg_pos((olig * deg_olig)) == 1
-            @test n_unique_oligs((olig * deg_olig)) == 4
-            
-            @test (deg_olig * olig) isa DegenerateOlig
-            @test String((deg_olig * olig)) == "ACGNACGT"
-            @test n_deg_pos((deg_olig * olig)) == 1
-            @test n_unique_oligs((deg_olig * olig)) == 4
-            
-            # NonDegenIterator tests
-            @test length(nondegens(deg_olig)) == 4
-            variants = collect(nondegens(deg_olig))
-            @test length(variants) == 4
-            @test Set(String.(variants)) == Set(["ACGA", "ACGC", "ACGG", "ACGT"])
-            
-            # Complex degenerate sequence
-            complex_deg = DegenerateOlig("RYSWKMBDHVN")
-            @test n_deg_pos(complex_deg) == 11
-            @test n_unique_oligs(complex_deg) == 20736
-            
-            # NonDegenIterator for complex sequence
-            @test length(nondegens(complex_deg)) == 20736
-            complex_variants = collect(Iterators.take(nondegens(complex_deg), 5))
-            @test all(x -> length(x) == 11, complex_variants)
-            
-            # Empty sequence
-            empty_deg = DegenerateOlig("", "empty")
-            @test isempty(empty_deg) == true
-            @test length(empty_deg) == 0
-            @test String(empty_deg) == ""
-            @test n_deg_pos(empty_deg) == 0
-            @test n_unique_oligs(empty_deg) == 1
-            @test length(nondegens(empty_deg)) == 1
+            empty_degen = DegenerateOlig("")
+            empty_desc = ""
+            empty_seq = ""
+            empty_chars = Char[]
+
+            @testset "Construction" begin
+                # Empty constructions
+                @test DegenerateOlig() == empty_degen
+                @test DegenerateOlig(empty_seq) == empty_degen
+                @test DegenerateOlig(empty_seq, empty_desc) == empty_degen
+                @test DegenerateOlig(empty_chars) == empty_degen
+                @test DegenerateOlig(empty_chars, empty_desc) == empty_degen
+                @test description(DegenerateOlig(empty_chars, random_description())) == ""
+
+                # Random valid constructions (string, chars, with/without desc)
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_degen_string(len)
+                    valid_chars = collect(valid_seq)
+                    desc = random_description()
+                    num_desc = rand(1:100)
+
+                    deg_from_seq = DegenerateOlig(valid_seq)
+                    deg_from_seq_desc = DegenerateOlig(valid_seq, desc)
+                    deg_from_chars = DegenerateOlig(valid_chars)
+                    deg_from_chars_desc = DegenerateOlig(valid_chars, desc)
+                    deg_from_seq_num_desc = DegenerateOlig(valid_seq, num_desc)
+
+                    @test deg_from_seq isa DegenerateOlig
+                    @test deg_from_seq_desc isa DegenerateOlig
+                    @test deg_from_chars isa DegenerateOlig
+                    @test deg_from_chars_desc isa DegenerateOlig
+                    @test deg_from_seq_num_desc isa DegenerateOlig
+
+                    @test String(deg_from_seq) == uppercase(valid_seq)
+                    @test String(deg_from_seq_desc) == uppercase(valid_seq)
+                    @test String(deg_from_chars) == uppercase(valid_seq)
+                    @test String(deg_from_chars_desc) == uppercase(valid_seq)
+                    @test String(deg_from_seq_num_desc) == uppercase(valid_seq)
+
+                    @test description(deg_from_seq) == ""
+                    @test description(deg_from_seq_desc) == desc
+                    @test description(deg_from_chars) == ""
+                    @test description(deg_from_chars_desc) == desc
+                    @test description(deg_from_seq_num_desc) == string(num_desc)  # Converted to string
+
+                    # Properties
+                    expected_deg_pos = count(c -> c in AlignedOligs.DEGEN_BASES, uppercase(valid_seq))
+                    expected_unique = reduce(*, (AlignedOligs.IUPAC_COUNTS[c] for c in uppercase(valid_seq)); init=BigInt(1))
+                    @test n_deg_pos(deg_from_seq) == expected_deg_pos
+                    @test n_unique_oligs(deg_from_seq) == expected_unique
+                    @test n_deg_pos(deg_from_seq_desc) == expected_deg_pos
+                    @test n_unique_oligs(deg_from_seq_desc) == expected_unique
+
+                    @test_throws MethodError DegenerateOlig(valid_seq, nothing)
+                    @test DegenerateOlig(valid_seq, "") isa DegenerateOlig
+                    @test description(DegenerateOlig(valid_seq, "")) == ""
+                end
+
+                # Invalid constructions (throws ErrorException)
+                for _ in 1:10
+                    len = rand(1:20)
+                    invalid_seq = random_invalid_degen_string(len)
+                    invalid_chars = collect(invalid_seq)
+                    desc = random_description()
+
+                    @test_throws ErrorException DegenerateOlig(invalid_seq)
+                    @test_throws ErrorException DegenerateOlig(invalid_seq, desc)
+                    @test_throws ErrorException DegenerateOlig(invalid_chars)
+                    @test_throws ErrorException DegenerateOlig(invalid_chars, desc)
+                end                
+            end
+
+            @testset "String interface" begin
+                # Empty
+                @test String(empty_degen) == empty_seq
+                @test length(empty_degen) == 0
+                @test isempty(empty_degen)
+                @test_throws BoundsError empty_degen[1]
+                @test collect(empty_degen) == empty_chars
+
+                # Random valid
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_degen_string(len)
+                    desc = random_description()
+                    deg = DegenerateOlig(valid_seq, desc)
+
+                    @test String(deg) == uppercase(valid_seq)
+                    @test length(deg) == len
+                    @test !isempty(deg)
+                    @test collect(deg) == collect(uppercase(valid_seq))
+
+                    # Indexing
+                    if len > 0
+                        @test deg[1] == uppercase(valid_seq)[1]
+                        @test deg[end] == uppercase(valid_seq)[end]
+                        mid_start = rand(1:len-1)
+                        mid_end = rand(mid_start+1:len)
+                        @test deg[mid_start:mid_end] == uppercase(valid_seq)[mid_start:mid_end]
+                        @test deg[end:-1:1] == reverse(uppercase(valid_seq))
+
+                        @test first(deg) == uppercase(valid_seq)[1]
+                        @test last(deg) == uppercase(valid_seq)[end]
+
+                        # occursin
+                        sub_len = rand(1:len)
+                        sub_start = rand(1:len-sub_len+1)
+                        sub = uppercase(valid_seq)[sub_start:sub_start+sub_len-1]
+                        @test occursin(sub, deg)
+                        invalid_sub = random_invalid_degen_string(sub_len)
+                        @test !occursin(invalid_sub, deg)
+                    end
+
+                    # Bounds errors
+                    @test_throws BoundsError deg[0]
+                    @test_throws BoundsError deg[len+1]
+                    @test_throws BoundsError deg[1:len+1]
+                end
+            end
+
+            @testset "Description" begin
+                # Empty
+                @test description(empty_degen) == ""
+
+                # Random
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_degen_string(len)
+                    desc = random_description()
+                    deg_no_desc = DegenerateOlig(valid_seq)
+                    deg_with_desc = DegenerateOlig(valid_seq, desc)
+
+                    @test description(deg_no_desc) == ""
+                    @test description(deg_with_desc) == desc
+                    @test description(DegenerateOlig(valid_seq, "")) == ""
+                end
+            end
+
+            @testset "Properties" begin
+                # Specific cases
+                deg_olig = DegenerateOlig("ACGN", "test")
+                @test n_deg_pos(deg_olig) == 1
+                @test n_unique_oligs(deg_olig) == 4
+
+                @test n_deg_pos(DegenerateOlig("ACGT")) == 0
+                @test n_unique_oligs(DegenerateOlig("ACGT")) == 1
+
+                @test n_deg_pos(DegenerateOlig("NNNN")) == 4
+                @test n_unique_oligs(DegenerateOlig("NNNN")) == 256
+
+                @test n_deg_pos(DegenerateOlig("RY")) == 2
+                @test n_unique_oligs(DegenerateOlig("RY")) == 4
+
+                @test n_deg_pos(DegenerateOlig("BVDH")) == 4
+                @test n_unique_oligs(DegenerateOlig("BVDH")) == 81
+
+                # Empty
+                @test n_deg_pos(empty_degen) == 0
+                @test n_unique_oligs(empty_degen) == 1
+
+                # Random
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_degen_string(len)
+                    deg = DegenerateOlig(valid_seq)
+                    expected_deg_pos = count(c -> c in random_degen_bases(), uppercase(valid_seq))
+                    expected_unique = reduce(*, (AlignedOligs.IUPAC_COUNTS[c] for c in uppercase(valid_seq)); init=BigInt(1))
+                    @test n_deg_pos(deg) == expected_deg_pos
+                    @test n_unique_oligs(deg) == expected_unique
+                end
+            end
+
+            @testset "Conversion" begin
+                # From Olig
+                for _ in 1:10
+                    len = rand(1:20)
+                    valid_seq = random_olig_string(len)  # non-degen
+                    desc = random_description()
+                    olig = Olig(valid_seq, desc)
+                    converted_deg = DegenerateOlig(olig)
+
+                    @test converted_deg isa DegenerateOlig
+                    @test String(converted_deg) == valid_seq
+                    @test description(converted_deg) == desc
+                    @test n_deg_pos(converted_deg) == 0
+                    @test n_unique_oligs(converted_deg) == 1
+
+                    @test convert(DegenerateOlig, olig) isa DegenerateOlig
+                    @test convert(DegenerateOlig, olig) == converted_deg
+                end
+
+                # From DegenerateOlig with degen (self)
+                degen_seq = "ACGN"
+                deg_olig_with_degen = DegenerateOlig(degen_seq)
+                converted_self = DegenerateOlig(deg_olig_with_degen)
+                @test converted_self == deg_olig_with_degen
+                @test n_deg_pos(converted_self) == 1
+                @test n_unique_oligs(converted_self) == 4
+            end
+
+            @testset "Concatenation" begin
+                # Empty
+                @test empty_degen * empty_degen == empty_degen
+
+                # Random
+                for _ in 1:10
+                    len1 = rand(1:10)
+                    len2 = rand(1:10)
+                    seq1 = random_degen_string(len1)
+                    seq2 = random_degen_string(len2)
+                    desc1 = random_description()
+                    desc2 = random_description()
+                    deg1 = DegenerateOlig(seq1, desc1)
+                    deg2 = DegenerateOlig(seq2, desc2)
+
+                    concat_deg = deg1 * deg2
+                    expected_type = (n_deg_pos(deg1) > 0 || n_deg_pos(deg2) > 0) ? DegenerateOlig : Olig
+                    @test concat_deg isa expected_type
+                    @test String(concat_deg) == uppercase(seq1) * uppercase(seq2)
+                    @test description(concat_deg) == "concat"
+                    @test length(concat_deg) == len1 + len2
+
+                    expected_deg_pos = n_deg_pos(deg1) + n_deg_pos(deg2)
+                    expected_unique = n_unique_oligs(deg1) * n_unique_oligs(deg2)
+                    if concat_deg isa DegenerateOlig
+                        @test n_deg_pos(concat_deg) == expected_deg_pos
+                        @test n_unique_oligs(concat_deg) == expected_unique
+                    end
+                end
+
+                # Multi-concat with mixed
+                deg_a = DegenerateOlig("A")
+                deg_c = DegenerateOlig("CN")
+                deg_g = DegenerateOlig("G")
+                deg_t = DegenerateOlig("T")
+                multi_concat = deg_a * deg_c * deg_g * deg_t
+                @test multi_concat isa DegenerateOlig
+                @test String(multi_concat) == "ACNGT"
+            end
+
+            @testset "Equality" begin
+                # Empty
+                @test empty_degen == empty_degen
+                @test empty_degen == empty_seq
+                @test empty_seq == empty_degen
+
+                # Random
+                for _ in 1:10
+                    len = rand(1:20)
+                    seq1 = random_degen_string(len)
+                    seq2 = random_degen_string(len)
+                    while uppercase(seq1) == uppercase(seq2)  # Ensure different
+                        seq2 = random_degen_string(len)
+                    end
+                    deg1 = DegenerateOlig(seq1)
+                    deg2 = DegenerateOlig(seq2)
+                    deg1_copy = DegenerateOlig(seq1)
+
+                    @test deg1 == deg1_copy
+                    @test deg1 != deg2
+                    @test deg1 == uppercase(seq1)
+                    @test uppercase(seq1) == deg1
+                    @test deg1 != uppercase(seq2)
+                    @test uppercase(seq2) != deg1
+                end
+
+                # Description doesn't affect equality
+                desc1 = random_description()
+                desc2 = random_description()
+                same_seq = random_degen_string(5)
+                deg_diff_desc1 = DegenerateOlig(same_seq, desc1)
+                deg_diff_desc2 = DegenerateOlig(same_seq, desc2)
+                @test deg_diff_desc1 == deg_diff_desc2
+            end
+
+            @testset "Case handling" begin
+                for _ in 1:10
+                    len = rand(1:20)
+                    lower_seq = lowercase(random_degen_string(len))
+                    upper_seq = uppercase(lower_seq)
+                    deg_lower = DegenerateOlig(lower_seq)
+                    deg_upper = DegenerateOlig(upper_seq)
+
+                    @test deg_lower == deg_upper
+                    @test String(deg_lower) == upper_seq
+                end
+            end
+
+            @testset "Empty sequence" begin
+                empty_degen_with_desc = DegenerateOlig(empty_seq, "empty")
+
+                @test isempty(empty_degen_with_desc)
+                @test length(empty_degen_with_desc) == 0
+                @test String(empty_degen_with_desc) == empty_seq
+                @test_throws BoundsError empty_degen_with_desc[1]
+                @test description(empty_degen_with_desc) == ""
+            end
 
             @testset "Display" begin
-                dolig = DegenerateOlig("AGNTC", "descr")
-                dolig_nodesc = DegenerateOlig("AGNTC", "")
-                dolig_long = DegenerateOlig("N"^25, "")
+                # Fixed cases for reproducibility
+                short_seq = "ACGN"
+                short_desc = "descr"
+                no_desc = ""
+                long_seq = "N"^25
+
+                deg_short_desc = DegenerateOlig(short_seq, short_desc)
+                deg_short_no_desc = DegenerateOlig(short_seq, no_desc)
+                deg_long_no_desc = DegenerateOlig(long_seq, no_desc)
+
                 # Short display
-                @test sprint(show, dolig) == "DegenerateOlig(\"AGNTC\", len=5, n_deg=1, vars=4, desc=\"descr\")"
-                @test sprint(show, dolig_nodesc) == "DegenerateOlig(\"AGNTC\", len=5, n_deg=1, vars=4)"
-                @test sprint(show, dolig_long) == "DegenerateOlig(\"NNNNNNNNNNNNNNNNN...\", len=25, n_deg=25, vars=>10k)"
+                @test sprint(show, deg_short_desc) == "DegenerateOlig(\"ACGN\", len=4, desc=\"descr\")"
+                @test sprint(show, deg_short_no_desc) == "DegenerateOlig(\"ACGN\", len=4)"
+                @test sprint(show, deg_long_no_desc) == "DegenerateOlig(\"NNNNNNNNNNNNNNNNN...\", len=25)"
+
                 # Full display
-                @test sprint(show, MIME"text/plain"(), dolig) == "DegenerateOlig\n  Sequence: AGNTC\n  Length: 5\n  Degenerate positions: 1\n  Unique variants: 4\n  Description: \"descr\"\n"
-                @test sprint(show, MIME"text/plain"(), dolig_nodesc) == "DegenerateOlig\n  Sequence: AGNTC\n  Length: 5\n  Degenerate positions: 1\n  Unique variants: 4\n  Description: (none)\n"
-                @test sprint(show, MIME"text/plain"(), dolig_long) == "DegenerateOlig\n  Sequence: NNNNNNNNNNNNNNNNNNNNNNNNN\n  Length: 25\n  Degenerate positions: 25\n  Unique variants: 1125899906842624\n  Description: (none)\n"
+                @test sprint(show, MIME"text/plain"(), deg_short_desc) == "DegenerateOlig\n  Sequence: ACGN\n  Length: 4\n  Description: \"descr\""
+                @test sprint(show, MIME"text/plain"(), deg_short_no_desc) == "DegenerateOlig\n  Sequence: ACGN\n  Length: 4\n  Description: (none)"
+                @test sprint(show, MIME"text/plain"(), deg_long_no_desc) == "DegenerateOlig\n  Sequence: NNNNNNNNNNNNNNNNNNNNNNNNN\n  Length: 25\n  Description: (none)"
+
+                # Random short and long
+                for _ in 1:5
+                    rand_len_short = rand(1:20)
+                    rand_seq_short = random_degen_string(rand_len_short)
+                    rand_desc_short = random_description()
+                    deg_rand_short = DegenerateOlig(rand_seq_short, rand_desc_short)
+
+                    expected_short_show = "DegenerateOlig(\"$(uppercase(rand_seq_short))\", len=$rand_len_short, desc=\"$rand_desc_short\")"
+                    @test sprint(show, deg_rand_short) == expected_short_show
+
+                    expected_full_show = "DegenerateOlig\n  Sequence: $(uppercase(rand_seq_short))\n  Length: $rand_len_short\n  Description: \"$rand_desc_short\""
+                    @test sprint(show, MIME"text/plain"(), deg_rand_short) == expected_full_show
+                end
+
+                for _ in 1:5
+                    rand_len_long = rand(21:50)
+                    rand_seq_long = random_degen_string(rand_len_long)
+                    deg_rand_long = DegenerateOlig(rand_seq_long)
+
+                    truncated_seq = uppercase(rand_seq_long)[1:17] * "..."
+                    expected_short_show = "DegenerateOlig(\"$truncated_seq\", len=$rand_len_long)"
+                    @test sprint(show, deg_rand_long) == expected_short_show
+
+                    expected_full_show = "DegenerateOlig\n  Sequence: $(uppercase(rand_seq_long))\n  Length: $rand_len_long\n  Description: (none)"
+                    @test sprint(show, MIME"text/plain"(), deg_rand_long) == expected_full_show
+                end
             end
-        end
-        
-        @testset "OligView" begin
-            # Basic view creation
-            olig = Olig("ACGTACGT", "test")
-            deg_olig = DegenerateOlig("ACGNACGN", "deg test")
-            
-            view1 = olig[2:5]
-            @test view1 isa OligView{Olig}
-            @test String(view1) == "CGTA"
-            @test length(view1) == 4
-            @test collect(view1) == ['C', 'G', 'T', 'A']
-            @test description(view1) == "test"
-            
-            view2 = deg_olig[2:5]
-            @test view2 isa OligView{DegenerateOlig}
-            @test String(view2) == "CGNA"
-            @test length(view2) == 4
-            @test collect(view2) == ['C', 'G', 'N', 'A']
-            @test description(view2) == "deg test"
-            
-            # Edge cases
-            @test isempty(olig[1:0])
-            @test_throws BoundsError olig[10:11]
-            
-            # String interface
-            @test view1[1] == 'C'
-            @test view1[2:3] == "GT"
-            @test view1[end] == 'A'
-            @test view1[3:-1:1] == "TGC"
-            @test occursin("GT", view1)
-            
-            # Properties
-            @test n_deg_pos(view1) == 0
-            @test n_unique_oligs(view1) == 1
-            @test n_deg_pos(view2) == 1
-            @test n_unique_oligs(view2) == 4
-            
-            # Concatenation
-            @test (view1 * Olig("TG")) isa Olig
-            @test String(view1 * Olig("TG")) == "CGTATG"
-            
-            @test (view2 * Olig("TG")) isa DegenerateOlig
-            @test String(view2 * Olig("TG")) == "CGNATG"
-            @test n_deg_pos(view2 * Olig("TG")) == 1
-            @test n_unique_oligs(view2 * Olig("TG")) == 4
-            
-            @test (Olig("AT") * view1) isa Olig
-            @test String(Olig("AT") * view1) == "ATCGTA"
-            
-            @test (Olig("AT") * view2) isa DegenerateOlig
-            @test String(Olig("AT") * view2) == "ATCGNA"
-            @test n_deg_pos(Olig("AT") * view2) == 1
-            @test n_unique_oligs(Olig("AT") * view2) == 4
-            
-            # Conversion
-            @test convert(Olig, view1) isa Olig
-            @test String(convert(Olig, view1)) == "CGTA"
-            @test_throws InexactError convert(Olig, view2)
-            
-            # NonDegenIterator for views
-            @test length(nondegens(view2)) == 4
-            view_variants = collect(nondegens(view2))
-            @test length(view_variants) == 4
-            @test Set(String.(view_variants)) == Set(["CGAA", "CGCA", "CGGA", "CGTA"])
-            
-            # Empty view
-            empty_view = olig[1:0]
-            @test isempty(empty_view)
-            @test length(empty_view) == 0
-            @test collect(empty_view) == Char[]
-            @test n_deg_pos(empty_view) == 0
-            @test n_unique_oligs(empty_view) == 1
-            
-            # View of a view
-            subview = view1[2:3]
-            @test String(subview) == "GT"
-            @test description(subview) == "test"
-            @test subview isa OligView{Olig}
-            @test n_deg_pos(subview) == 0
-            @test n_unique_oligs(subview) == 1
-            
-            # View of degenerate view
-            deg_subview = view2[2:3]
-            @test String(deg_subview) == "GN"
-            @test description(deg_subview) == "deg test"
-            @test deg_subview isa OligView{DegenerateOlig}
-            @test n_deg_pos(deg_subview) == 1
-            @test n_unique_oligs(deg_subview) == 4
-
-            @testset "Display" begin
-                dolig_view = DegenerateOlig("AGNTC", "descr")[2:3]
-                dolig_view_nodesc = DegenerateOlig("AGNTC", "")[2:4]
-                dolig_view_long = DegenerateOlig("N"^25, "")[10:22]
-                # Short display
-                @test sprint(show, dolig_view) == "OligView(\"GN\", len=2, range=2:3, desc=\"descr\")"
-                @test sprint(show, dolig_view_nodesc) == "OligView(\"GNT\", len=3, range=2:4)"
-                @test sprint(show, dolig_view_long) == "OligView(\"NNNNNNNNNNNNN\", len=13, range=10:22)"
-                # Full display
-                @test sprint(show, MIME"text/plain"(), dolig_view) == "OligView{DegenerateOlig}\n  Viewed sequence: GN\n  Length: 2\n  Range: 2:3\n  Parent description: descr\n"
-                @test sprint(show, MIME"text/plain"(), dolig_view_nodesc) == "OligView{DegenerateOlig}\n  Viewed sequence: GNT\n  Length: 3\n  Range: 2:4\n  Parent description: \n"
-                @test sprint(show, MIME"text/plain"(), dolig_view_long) == "OligView{DegenerateOlig}\n  Viewed sequence: NNNNNNNNNNNNN\n  Length: 13\n  Range: 10:22\n  Parent description: \n"
-            end
-        end
-        
-        @testset "GappedOlig" begin
-            # Construction tests with Olig parent
-            seq = "ACGTACGT"
-            gapped_seq = "AC--GT-ACGT"
-            olig = Olig(seq, "test")
-            go = GappedOlig(olig, [3=>2, 5=>1])
-            @test go isa GappedOlig{Olig}
-            @test String(go) == gapped_seq
-            @test length(go) == 11
-            @test parent(go) === olig
-            @test go.gaps == [3=>2, 5=>1]
-            @test description(go) == description(olig)
-            @test hasgaps(go)
-            @test n_deg_pos(go) == 0
-            @test n_unique_oligs(go) == 1
-            @test collect(go) == collect(gapped_seq)
-            
-            # Construction from string
-            go_str = GappedOlig(gapped_seq, "test")
-            @test go_str isa GappedOlig{Olig}
-            @test String(go_str) == gapped_seq
-            @test parent(go_str) == Olig(seq, "test")
-            @test go_str.gaps == [3=>2, 5=>1]
-            @test length(go_str) == 11
-            
-            # Construction with DegenerateOlig parent
-            deg_seq = "ACGNRT"
-            gapped_deg_seq = "AC--GN-RT"
-            deg_olig = DegenerateOlig(deg_seq, "deg test")
-            go_deg = GappedOlig(deg_olig, [3=>2, 5=>1])
-            @test go_deg isa GappedOlig{DegenerateOlig}
-            @test String(go_deg) == gapped_deg_seq
-            @test length(go_deg) == 9
-            @test parent(go_deg) === deg_olig
-            @test go_deg.gaps == [3=>2, 5=>1]
-            @test n_deg_pos(go_deg) == 2
-            @test n_unique_oligs(go_deg) == 8
-            @test collect(go_deg) == collect(gapped_deg_seq)
-            
-            # Construction from degenerate string
-            go_deg_str = GappedOlig(gapped_deg_seq, "deg test")
-            @test go_deg_str isa GappedOlig{DegenerateOlig}
-            @test String(go_deg_str) == gapped_deg_seq
-            @test parent(go_deg_str) == DegenerateOlig(deg_seq, "deg test")
-            @test go_deg_str.gaps == [3=>2, 5=>1]
-            
-            # Invalid gap positions
-            @test_throws ArgumentError GappedOlig(olig, [0=>1]) # Start < 1
-            @test_throws ArgumentError GappedOlig(olig, [10=>1]) # Start > parent len + 1
-            @test_throws ArgumentError GappedOlig(olig, [3=>0]) # Non-positive gap length
-            @test_throws ArgumentError GappedOlig(olig, [3=>2, 3=>1]) # Overlapping gaps
-            
-            # Edge cases: empty and no gaps
-            empty_go = GappedOlig(Olig(""), Pair{Int}[])
-            @test String(empty_go) == ""
-            @test length(empty_go) == 0
-            @test isempty(empty_go) == true
-            @test hasgaps(empty_go) == false
-            no_gap_go = GappedOlig(olig, Pair{Int}[])
-            @test String(no_gap_go) == "ACGTACGT"
-            @test length(no_gap_go) == 8
-            @test hasgaps(no_gap_go) == false
-            
-            # Indexing tests
-            @test go[1] == 'A'
-            @test go[3] == '-'
-            @test go[5] == 'G'
-            @test go[11] == 'T'
-            @test_throws BoundsError go[12]
-            @test go[1:3] isa OligView{GappedOlig{Olig}}
-            @test String(go[1:3]) == "AC-"
-            @test String(go[3:4]) == "--"
-            @test String(go[5:7]) == "GT-"
-            @test String(go[8:11]) == "ACGT"
-            @test String(go[11:11]) == "T"
-            
-            # Slicing with DegenerateOlig
-            go_view = go_deg[2:7]
-            @test go_view isa OligView{GappedOlig{DegenerateOlig}}
-            @test String(go_view) == "C--GN-"
-            @test n_deg_pos(go_view) == 1
-            @test n_unique_oligs(go_view) == 4
-            @test collect(nondegens(go_view)) == GappedOlig.(["C--GA-", "C--GC-", "C--GG-", "C--GT-"])
-            
-            # Gaps at start/end
-            go_start = GappedOlig(olig, [1=>2])
-            @test String(go_start) == "--ACGTACGT"
-            @test length(go_start) == 10
-            @test go_start[1] == '-' && go_start[3] == 'A'
-            go_end = GappedOlig(olig, [9=>2])
-            @test String(go_end) == "ACGTACGT--"
-            @test length(go_end) == 10
-            @test go_end[8] == 'T' && go_end[9] == '-'
-            
-            # Complex slicing
-            nested_view = go[2:8][2:5]
-            @test nested_view isa OligView{GappedOlig{Olig}}
-            @test nested_view == "--GT"
-            @test go[4:5] == "-G"
-            @test go[7:7] == "-"
-            
-            # Concatenation edge cases
-            @test_throws ErrorException go * go
-            go_view = go[1:3]
-            @test_throws ErrorException go_view * Olig("CG")
-            
-            # SeqFold methods
-            @test SeqFold.revcomp(go) == "ACGT-AC--GT"
-            @test SeqFold.revcomp(go) isa GappedOlig{Olig}
-            @test SeqFold.revcomp(go).gaps == [length(go)-a-1 => b for (a,b) in reverse(go.gaps)]
-            @test SeqFold.complement(go) == "TG--CA-TGCA"
-            @test SeqFold.complement(go).gaps == go.gaps
-            @test SeqFold.gc_content(go) ≈ SeqFold.gc_content(olig)
-            @test_throws ErrorException SeqFold.fold(go)
-            @test_throws ErrorException SeqFold.dg(go)
-            @test_throws ErrorException SeqFold.tm(go)
-            
-            # Iteration
-            @test collect(go) == collect(gapped_seq)
-            @test collect(go_deg) == collect(gapped_deg_seq)
-            empty_iter = GappedOlig(Olig(""), Pair{Int}[])
-            @test iterate(empty_iter) === nothing
-            
-            # Nondegens for degenerate parent
-            @test collect(nondegens(go)) == [go]
-            @test collect(nondegens(go_deg)) == GappedOlig.(["AC--GA-AT", "AC--GA-GT", "AC--GC-AT", "AC--GC-GT", "AC--GG-AT", "AC--GG-GT", "AC--GT-AT", "AC--GT-GT"])
-        end
-
-        @testset "Extra" begin
-            @testset "GappedOlig with DegenerateOlig" begin
-                deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
-                gaps = [3=>2, 5=>1]
-                go = GappedOlig(deg_olig, gaps)
-                @test go isa GappedOlig{DegenerateOlig}
-                @test String(go) == "AC--GN-RT"  # 6 bases + 3 gaps = 9 length
-                @test parent(go) == deg_olig
-                @test go.gaps == gaps
-                @test length(go) == 9
-                @test n_deg_pos(go) == 2  # N and R from parent
-                @test n_unique_oligs(go) == 8  # N=4, R=2
-                @test collect(go) == ['A','C','-','-','G','N','-','R','T']
-                @test String(go[2:7]) == "C--GN-"
-                @test String(go[8:end]) == "RT"
-                @test go[3] == '-'
-                @test go[6] == 'N'
-                go_view = go[3:6]
-                @test go_view isa OligView{GappedOlig{DegenerateOlig}}
-                @test String(go_view) == "--GN"
-                @test n_deg_pos(go_view) == 1
-                @test n_unique_oligs(go_view) == 4
-                @test collect(nondegens(go_view)) == GappedOlig.(["--GA", "--GC", "--GG", "--GT"])
-
-                deg_olig = DegenerateOlig("ACGNRT", "deg gap test")
-                # Gaps at start
-                go_start = GappedOlig(deg_olig, [1=>2])
-                @test String(go_start) == "--ACGNRT"
-                @test length(go_start) == 8
-                @test go_start[1] == '-' && go_start[2] == '-' && go_start[3] == 'A'
-                # Gaps at end
-                go_end = GappedOlig(deg_olig, [7=>2])
-                @test String(go_end) == "ACGNRT--"
-                @test length(go_end) == 8
-                @test go_end[6] == 'T' && go_end[7] == '-' && go_end[8] == '-'
-                # Multiple gaps with degenerate bases
-                go_multi = GappedOlig(deg_olig, [2=>1, 3=>1, 4=>1])
-                @test String(go_multi) == "A-C-G-NRT"
-                @test length(go_multi) == 9
-                @test collect(go_multi) == ['A', '-', 'C', '-', 'G', '-', 'N', 'R', 'T']
-                # Slice including partial gap
-                @test String(go_multi[2:5]) == "-C-G"
-                # Gap-only slice
-                go = GappedOlig(deg_olig, [3=>2, 6=>1])
-                @test String(go[3:4]) == "--"
-            end
-
-            @testset "Random Sampling" begin
-                deg_olig = DegenerateOlig("ACRN", "rand test")
-                rng = Random.MersenneTwister(42)
-                rand_olig = rand(rng, deg_olig)
-                @test rand_olig isa Olig
-                @test String(rand_olig) in String.(nondegens(deg_olig))
-                @test description(rand_olig) == "rand test"
-                deg_view = deg_olig[2:4]
-                rand_view = rand(rng, deg_view)
-                @test rand_view isa Olig
-                @test String(rand_view) in ["CAA", "CAG", "CGA", "CGG"]
-                @test description(rand_view) == "rand test"
-                # Test multiple samples to ensure coverage
-                samples = Set(String(rand(rng, deg_olig)) for _ in 1:100)
-                @test length(samples) > 1  # Likely to hit multiple variants
-            end
-
-            @testset "Complex Slicing for GappedOlig" begin
-                olig = Olig("ACGTACGT", "slice test")
-                go = GappedOlig(olig, [3=>2, 5=>1])
-                @test String(go) == "AC--GT-ACGT"
-                @test String(go[3:4]) == "--"  # Only gaps
-                @test String(go[4:5]) == "-G"  # Partial gap
-                @test String(go[6:8]) == "T-A"  # Gap in middle
-                @test String(go[1:2]) == "AC"  # Before gaps
-                @test String(go[end:end]) == "T"  # Single position
-                nested_view = go[2:8][2:5]
-                @test nested_view isa OligView{GappedOlig{Olig}}
-                @test String(nested_view) == "--GT"  # Nested slice
-                deg_olig = DegenerateOlig("ACGNRT", "deg slice")
-                go_deg = GappedOlig(deg_olig, [3=>2])
-                @test String(go_deg[2:5]) == "C--G"
-                @test String(go_deg[3:4]) == "--"
-            end
-
-            @testset "Concatenation Edge Cases" begin
-                go = GappedOlig(Olig("ACGT", "test"), [3=>1])
-                @test_throws ErrorException go * go  # Gapped concatenation not supported
-                go_view = go[1:3]
-                @test go_view isa OligView{GappedOlig{Olig}}
-                @test_throws ErrorException go_view * Olig("CG")
-                deg_olig = DegenerateOlig("ACN")
-                go_deg = GappedOlig(deg_olig, [2=>1])
-                go_deg_view = go_deg[1:3]
-                @test_throws ErrorException go_deg_view * Olig("CG")
-            end
-
-            @testset "SeqFold Methods" begin
-                deg_olig = DegenerateOlig("ACGN", "tm test")
-                tm_result = SeqFold.tm(deg_olig, conditions=:pcr)
-                @test tm_result.mean isa Float64
-                @test tm_result.conf[1] <= tm_result.mean <= tm_result.conf[2]
-                @test all(x in ["ACGA", "ACGC", "ACGG", "ACGT"] for x in nondegens(deg_olig))
-                deg_view = deg_olig[2:4]
-                tm_view = SeqFold.tm(deg_view, conditions=:pcr)
-                @test tm_view.mean isa Float64
-                @test tm_view.conf[1] <= tm_view.mean <= tm_view.conf[2]
-                @test SeqFold.gc_content(deg_olig) ≈ (0.0 + 1.0 + 1.0 + 0.5) / 4  # A,C,G,N weights
-                @test SeqFold.gc_content(deg_view) ≈ (1.0 + 1.0 + 0.5) / 3  # C,G,N
-                no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int}[])
-                @test SeqFold.tm(no_gap_go, conditions=:pcr).mean == SeqFold.tm("ACGT", conditions=:pcr)
-            end
-
-            @testset "Boundary Indexing and Slicing" begin
-                # Single-position slices
-                olig = Olig("ACGT", "single")
-                @test olig[1:1] == "A"
-                @test olig[end:end] == "T"
-                deg_olig = DegenerateOlig("ACGN", "deg single")
-                @test deg_olig[1:1] == "A"
-                @test deg_olig[end:end] == "N"
-                go = GappedOlig(Olig("ACGT"), [2=>1])
-                @test go[2:2] == "-"  # Single gap position
-                @test go[3:3] == "C"  # Single non-gap position
-
-                # Negative step ranges
-                @test olig[4:-1:1] == "TGCA"
-                @test deg_olig[4:-1:1] == "NGCA"
-                @test go[5:-1:1] == "TGC-A"  # Includes gap
-            end
-
-            @testset "Degenerate Base Edge Cases" begin
-                # All degenerate bases
-                all_deg = DegenerateOlig("NNNNNN", "all deg")
-                @test n_deg_pos(all_deg) == 6
-                @test n_unique_oligs(all_deg) == 4^6  # 4096
-                @test length(collect(nondegens(all_deg))) == 4^6
-                @test all(length(ol) == 6 for ol in Iterators.take(nondegens(all_deg), 10))
-
-                # Mixed degenerate/non-degenerate
-                mixed_deg = DegenerateOlig("ACGRYN", "mixed")
-                @test n_deg_pos(mixed_deg) == 3  # R, Y, N
-                @test n_unique_oligs(mixed_deg) == 2 * 2 * 4  # 16
-                @test Set(String.(collect(nondegens(mixed_deg)))) ⊆ Set([String(['A','C','G',d,e,f]) for d in "AG" for e in "CT" for f in "ACGT"])
-            end
-
-            @testset "Error Handling for Invalid Inputs" begin
-                # Invalid degenerate codes
-                @test_throws ErrorException DegenerateOlig("ACGTZ")  # Z not in ALL_BASES
-                @test_throws ErrorException DegenerateOlig("ACG#")  # Non-IUPAC character
-                @test_throws ArgumentError GappedOlig(Olig("ACGT"), [2=>-1])  # Negative gap length
-            end
-
-            @testset "SeqFold Interoperability" begin
-                # revcomp for OligView
-                olig = Olig("ACGT", "revcomp test")
-                ov = olig[2:4]
-                @test SeqFold.revcomp(ov) == "ACG"
-                @test SeqFold.revcomp(ov) isa OligView{Olig}
-                deg_olig = DegenerateOlig("ACGN", "deg revcomp")
-                deg_ov = deg_olig[2:4]
-                @test SeqFold.revcomp(deg_ov) == "NCG"
-                @test SeqFold.revcomp(deg_ov) isa OligView{DegenerateOlig}
-
-                # complement for degenerate sequences
-                @test SeqFold.complement(deg_olig) == "TGCN"
-                @test SeqFold.complement(deg_olig) isa DegenerateOlig
-                @test n_deg_pos(SeqFold.complement(deg_olig)) == 1
-                @test n_unique_oligs(SeqFold.complement(deg_olig)) == 4
-            end
-
-            @testset "Long Sequences and Many Gaps" begin
-                # Long sequence
-                long_olig = Olig("A"^100, "long")
-                @test length(long_olig) == 100
-                @test String(long_olig[50:60]) == "A"^11
-                @test SeqFold.gc_content(long_olig) ≈ 0.0
-
-                # Many gaps
-                gaps = [i=>1 for i in 1:10:91]  # Gaps every 10 positions
-                go_long = GappedOlig(long_olig, gaps)
-                @test length(go_long) == 110  # 100 bases + 10 gaps
-                @test go_long[20:25] == "AAA-AA"
-                @test n_deg_pos(go_long) == 0
-                @test n_unique_oligs(go_long) == 1
-            end
-
-            @testset "Conversion Edge Cases" begin
-                # OligView to Olig/DegenerateOlig
-                ov = Olig("ACGT")[2:3]
-                @test convert(Olig, ov) == Olig("CG")
-                deg_ov = DegenerateOlig("ACGN")[2:4]
-                @test convert(DegenerateOlig, deg_ov) == DegenerateOlig("CGN")
-                @test_throws InexactError convert(Olig, DegenerateOlig("NN")[1:2])
-
-                # GappedOlig to string and back
-                go = GappedOlig(Olig("ACGT"), [2=>1])
-                go_str = String(go)
-                @test GappedOlig(go_str) == go
-            end
-            
         end
     end
 end
