@@ -1,34 +1,32 @@
+"""
+    AlignedOligs.jl
+
+Package for nucleic acid oligomers aligning and PCR primers construction.
+
+
+$(isnothing(get(ENV, "CI", nothing)) ? ("Package local path: " * string(pathof(AlignedOligs))) : "")
+"""
 module AlignedOligs
 
-"""
-    Package AlignedOligs
-
-Nucleic acid oligomers aligning and PCR primers construction
-
-$(isnothing(get(ENV, "CI", nothing)) ? ("\nPackage local path: $(pathof(AlignedOligs))") : "") 
-"""
-AlignedOligs
-
 using Reexport
-using FastaIO
-using Statistics
-using Random
-using Statistics
-using ProgressMeter
+# using FastaIO
+# using Statistics
+# using Statistics
+# using ProgressMeter
 
 @reexport using SeqFold
 
-export AbstractOlig, Olig, DegenerateOlig, OligView, GappedOlig
-export n_unique_oligs, n_deg_pos, nondegens, description, hasgaps
-export AbstractMSA, MSA, MSAView, msadepth, msadet, width, height, root, bval#, min_tresh
-export nseqs, width, getsequence, getsequence, get_base_count, consensus_major, consensus_degen, dry_msa
-export Primer, construct_primers, best_pairs, nucleotide_diversity
+export Oligs, Primers, Alignments
 
-include("utils.jl")
+# export AbstractPrimer
+
+# export Primer
+# export construct_primers, best_pairs
+
 include("Oligs.jl")
 include("MSA.jl")
-include("SeqFold_methods.jl")
-include("Primers.jl")
-include("show.jl")
+# include("Primers.jl")
+# include("SeqFold_methods.jl")
+# include("show.jl")
 
-end
+end # module

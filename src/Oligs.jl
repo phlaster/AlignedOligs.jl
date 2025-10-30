@@ -1,128 +1,97 @@
+module Oligs
+include("utils.jl")
+
+using Random
+using Statistics
+
+using SeqFold
+
+export AbstractOlig, AbstractDegen, AbstractGapped
+export Olig, DegenOlig, GappedOlig, OligView
+export olig_range, description
+export NonDegenIterator, nondegens
+export hasgaps, n_deg_pos, n_unique_oligs
+
 abstract type AbstractOlig <: AbstractString end
+abstract type AbstractDegen <: AbstractOlig end
+abstract type AbstractGapped <: AbstractDegen end
 
 struct Olig <: AbstractOlig
     seq::String
     description::String
 
-    function Olig(seq::AbstractString, description::Union{AbstractString, Integer}="")
+    function Olig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
         isempty(seq) && return new("", "")
         seq = uppercase(seq)
         seq_chars = Set(seq)
         if !issubset(seq_chars, NON_DEGEN_BASES)
             error("Olig contains unallowed characters: $(join(setdiff(seq_chars, NON_DEGEN_BASES), ", "))")
         end
-        return new(seq, string(description))
+        return new(seq, string(descr))
     end
 end
 
-const EMPTY_OLIG = Olig("", "")
-Olig() = EMPTY_OLIG
-
-Olig(chars::Vector{Char}, descr::AbstractString = "") = Olig(String(chars), descr)
-
-function Olig(olig::AbstractOlig)
-    if n_deg_pos(olig) > 0
-        throw(InexactError(:Olig, Olig, olig))
-    end
-    return Olig(String(olig), description(olig))
-end
-
-struct DegenerateOlig <: AbstractOlig
+struct DegenOlig <: AbstractDegen
     seq::String
     n_deg_pos::Int
     n_unique_oligs::BigInt
     description::String
-end
-const EMPTY_DEGENERATE = DegenerateOlig("", 0, 1, "")
-DegenerateOlig() = EMPTY_DEGENERATE
 
-function DegenerateOlig(seq::AbstractString, descr::Union{AbstractString, Integer} = "")
-    isempty(seq) && return DegenerateOlig()
+    function DegenOlig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
+        isempty(seq) && return new("", 0, 1, string(descr))
 
-    seq = uppercase(seq)
-    seq_chars = Set(seq)
-    if !issubset(seq_chars, ALL_BASES)
-        error("DegenerateOlig contains unallowed characters: $(join(setdiff(seq_chars, ALL_BASES), ", "))")
+        seq = uppercase(seq)
+        seq_chars = Set(seq)
+        if !issubset(seq_chars, ALL_BASES)
+            error("DegenOlig contains unallowed characters: $(join(setdiff(seq_chars, ALL_BASES), ", "))")
+        end
+        
+        n_degenerate = count(char -> char in DEGEN_BASES, seq)
+        n_possible = reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
+        return new(seq, n_degenerate, n_possible, string(descr))
     end
-    
-    n_degenerate = count(char -> char in DEGEN_BASES, seq)
-    n_possible = reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
-    return DegenerateOlig(seq, n_degenerate, n_possible, string(descr))
 end
 
-DegenerateOlig(chars::Vector{Char}, descr::AbstractString = "") = DegenerateOlig(String(chars), descr)
-DegenerateOlig(olig::AbstractOlig) = DegenerateOlig(String(olig), n_deg_pos(olig), n_unique_oligs(olig), description(olig))
-
-struct GappedOlig{T<:Union{Olig,DegenerateOlig}} <: AbstractOlig
-    parent::T
-    gaps::Vector{Pair{Int}}  # sorted, non-overlapping: start position (1-based in ungapped) => length
+struct GappedOlig <: AbstractGapped
+    parent::DegenOlig
+    gaps::Vector{Pair{Int}}
     total_length::Int
 
-    function GappedOlig(parent::T, gaps::Vector{Pair{Int}}) where T <: Union{Olig,DegenerateOlig}
-        parent_len = length(parent)
-        if isempty(gaps)
-            return new{T}(parent, gaps, parent_len)
-        end
+    function GappedOlig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
+        parent_seq = filter(!=('-'), seq)
+        underlying_olig = DegenOlig(parent_seq, descr)
 
-        sorted_gaps = sort(gaps; by=first)
+        gaps = Pair{Int}[]
+        parent_pos = 0
+        i = 1
+        n = length(seq)
         
-        for i in 1:length(sorted_gaps)
-            start, len = sorted_gaps[i]
-            if start < 1 || start > parent_len + 1
-                throw(ArgumentError("Gap start position $start must be between 1 and $(parent_len + 1)"))
-            end
-            if len <= 0
-                throw(ArgumentError("Gap length must be positive, got $len"))
-            end
-            if i > 1 && sorted_gaps[i-1].first == start
-                throw(ArgumentError("Duplicate gap start position: $start"))
-            end
-        end
-
-        total_length = parent_len + sum(len for (_, len) in sorted_gaps)
-        return new{T}(parent, sorted_gaps, total_length)
-    end
-end
-const EMPTY_GAPPED = GappedOlig(Olig(), Pair{Int}[])
-GappedOlig() = EMPTY_GAPPED
-
-function GappedOlig(seq::AbstractString, descr::AbstractString = "")
-    parent_seq = filter(c -> c != '-', seq)
-    underlying_olig = try
-        Olig(parent_seq, descr)
-    catch err
-        if err isa ErrorException && startswith(err.msg, "Olig contains unallowed characters")
-            DegenerateOlig(parent_seq, descr)
-        else
-            rethrow(err)
-        end
-    end
-
-    gaps = Pair{Int}[]
-    parent_pos = 0
-    i = 1
-    n = length(seq)
-    
-    while i <= n
-        if seq[i] != '-'
-            parent_pos += 1
-            i += 1
-        else
-            gap_start = parent_pos + 1
-            len = 0
-            while i <= n && seq[i] == '-'
-                len += 1
+        while i <= n
+            if seq[i] != '-'
+                parent_pos += 1
                 i += 1
+            else
+                gap_start = parent_pos + 1
+                len = 0
+                while i <= n && seq[i] == '-'
+                    len += 1
+                    i += 1
+                end
+                push!(gaps, gap_start => len)
             end
-            push!(gaps, gap_start => len)
         end
+        return new(underlying_olig, gaps, n)
     end
-    return GappedOlig(underlying_olig, gaps)
 end
 
-struct OligView{T<:AbstractOlig} <: AbstractOlig
+struct OligView{T} <: AbstractOlig where T<:Union{Olig, DegenOlig, GappedOlig}
     parent::T
     range::UnitRange{Int}
+
+    function OligView(olig::T, interval::UnitRange{Int}) where T<:Union{Olig, DegenOlig, GappedOlig}
+        @boundscheck checkbounds(olig, interval)
+        new{T}(olig, interval)
+    end
 end
 
 struct NonDegenIterator{T<:AbstractOlig}
@@ -130,61 +99,61 @@ struct NonDegenIterator{T<:AbstractOlig}
     n_variants::Integer
 end
 
-function Base.getindex(olig::AbstractOlig, r::UnitRange{Int})
-    @boundscheck checkbounds(1:lastindex(olig), r)
-    if olig isa OligView
-        adjusted_start = olig_range(olig).start + r.start - 1
-        adjusted_range = adjusted_start:(adjusted_start + length(r) - 1)
-    else
-        adjusted_range = r
-    end
-    P = parent(olig)
-    return OligView(P, adjusted_range)
-end
-function Base.getindex(olig::T, i::Int) where {T<:AbstractOlig}
-    @boundscheck checkbounds(1:lastindex(olig), i)
-    String(olig)[i]
+const EMPTY_OLIG = Olig("")
+Olig() = EMPTY_OLIG
+
+const EMPTY_DEGENERATE = DegenOlig("")
+DegenOlig() = EMPTY_DEGENERATE
+
+const EMPTY_GAPPED = GappedOlig("")
+GappedOlig() = EMPTY_GAPPED
+
+Olig(chars::Vector{Char}, descr="") = Olig(String(chars), descr)
+function Olig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+    new_descr = isempty(descr) ? description(olig) : descr
+    return Olig(String(olig), new_descr)
 end
 
-function Base.getindex(go::GappedOlig, i::Int)
-    @boundscheck checkbounds(1:length(go), i)
-    cum_gaps = 0
-    for (start, len) in go.gaps
-        gapped_start = start + cum_gaps
-        gapped_end = gapped_start + len - 1
-        if gapped_end < i
-            cum_gaps += len
-            continue
-        end
-        if gapped_start <= i <= gapped_end
-            return '-'
+DegenOlig(chars::Vector{Char}, descr="") = DegenOlig(String(chars), descr)
+function DegenOlig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+    new_descr = isempty(descr) ? description(olig) : descr
+    DegenOlig(String(olig), new_descr)
+end
+
+GappedOlig(chars::Vector{Char}, descr="") = DegenOlig(String(chars), descr)
+function GappedOlig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+    new_descr = isempty(descr) ? description(olig) : descr
+    GappedOlig(String(olig), new_descr)
+end
+
+Base.getindex(olig::AbstractOlig, r::UnitRange{Int}) = OligView(parent(olig), r)
+Base.getindex(olig::AbstractOlig, i::Int) = getindex(String(olig), i)
+function Base.getindex(ov::OligView, r::UnitRange{Int})
+    @boundscheck checkbounds(ov, r)
+    actual_start = olig_range(ov).start + r.start - 1
+    actual_stop = olig_range(ov).start + r.stop - 1
+    actual_range = actual_start:actual_stop
+    return OligView(parent(ov), actual_range)
+end
+function Base.getindex(olig::GappedOlig, r::UnitRange{Int})
+    @boundscheck begin
+        if !(1 <= first(r) <= last(r) <= length(olig))
+            throw(BoundsError(olig, r))
         end
     end
-    ungapped_i = i - cum_gaps
-    @boundscheck checkbounds(1:length(go.parent), ungapped_i)
-    return go.parent[ungapped_i]
-end
-function Base.getindex(go::GappedOlig, r::UnitRange{Int})
-    @boundscheck checkbounds(1:length(go), r)
-    return OligView(go, r)
+    return OligView(olig, r)
 end
 function Base.getindex(ov::OligView, i::Int)
-    @boundscheck checkbounds(1:length(ov), i)
-    return ov.parent[ov.range.start + i - 1]
+    or = olig_range(ov)
+    adjusted_i = or.start + i - 1
+    @boundscheck checkbounds(ov, i)
+    return getindex(parent(ov), adjusted_i)
 end
 
 Base.String(olig::Olig) = olig.seq
-Base.String(olig::DegenerateOlig) = olig.seq
-Base.String(go::GappedOlig) = _build_gapped_string(go)
+Base.String(olig::DegenOlig) = olig.seq
 Base.String(ov::OligView) = String(parent(ov))[olig_range(ov)]
-
-Base.:(==)(o::AbstractOlig, s::SubString{<:Base.AnnotatedString}) = String(o) == String(s)
-Base.:(==)(s::SubString{<:Base.AnnotatedString}, o::AbstractOlig) = o == s
-Base.:(==)(o::AbstractOlig, s::Base.AnnotatedString) = String(o) == String(s)
-Base.:(==)(s::Base.AnnotatedString, o::AbstractOlig) = o == s
-Base.:(==)(a::GappedOlig, b::GappedOlig) = (a.parent == b.parent) && (a.gaps == b.gaps) && (a.total_length == b.total_length)
-
-function _build_gapped_string(go::GappedOlig)
+function Base.String(go::GappedOlig)
     parent_len = length(parent(go))
     buffer = Vector{Char}(undef, length(go))
     ungapped_pos = 1 
@@ -221,19 +190,25 @@ function _build_gapped_string(go::GappedOlig)
     return String(buffer)
 end
 
+Base.:(==)(o::AbstractOlig, s::SubString{<:Base.AnnotatedString}) = String(o) == String(s)
+Base.:(==)(s::SubString{<:Base.AnnotatedString}, o::AbstractOlig) = o == s
+Base.:(==)(o::AbstractOlig, s::Base.AnnotatedString) = String(o) == String(s)
+Base.:(==)(s::Base.AnnotatedString, o::AbstractOlig) = o == s
+Base.:(==)(a::GappedOlig, b::GappedOlig) = (a.parent == b.parent) && (a.gaps == b.gaps) && (a.total_length == b.total_length)
+
 Base.parent(olig::AbstractOlig) = olig
 Base.parent(olig::OligView) = olig.parent
 Base.parent(olig::GappedOlig) = olig.parent
 Base.parent(ndi::NonDegenIterator) = ndi.olig
 
 Base.ncodeunits(olig::AbstractOlig) = length(olig)
-Base.codeunit(olig::Olig, i::Integer) = codeunit(String(olig), i)
-Base.codeunit(olig::DegenerateOlig, i::Integer) = codeunit(String(olig), i)
-Base.codeunit(go::GappedOlig, i::Integer) = UInt8(_char_at(go, i))
-Base.codeunit(ov::OligView, i::Integer) = codeunit(parent(ov), olig_range(ov).start + i - 1)
 
-function _char_at(go::GappedOlig, k::Integer)
-    @boundscheck 1 <= k <= go.total_length || throw(BoundsError(go, k))
+Base.codeunit(::AbstractOlig) = UInt8
+Base.codeunit(olig::Olig, i::Integer) = codeunit(String(olig), i)
+Base.codeunit(olig::DegenOlig, i::Integer) = codeunit(String(olig), i)
+Base.codeunit(ov::OligView, i::Integer) = codeunit(parent(ov), olig_range(ov).start + i - 1)
+function Base.codeunit(go::GappedOlig, i::Integer)
+    @boundscheck 1 <= i <= go.total_length || throw(BoundsError(go, i))
     parent_len = length(parent(go))
     cum_gaps = 0
     ungapped_pos = 0 
@@ -242,28 +217,27 @@ function _char_at(go::GappedOlig, k::Integer)
     for (start, len) in go.gaps
         positions_before_gap = start - ungapped_pos
         gapped_end = gapped_pos + positions_before_gap
-        if gapped_pos < k <= gapped_end
-            return String(parent(go))[ungapped_pos + (k - gapped_pos)]
+        if gapped_pos < i <= gapped_end
+            return UInt8(parent(go)[ungapped_pos + (i - gapped_pos)])
         end
         gapped_pos = gapped_end
-        if gapped_pos < k <= gapped_pos + len
-            return '-'
+        if gapped_pos < i <= gapped_pos + len
+            return UInt8('-')
         end
         gapped_pos += len
         cum_gaps += len
         ungapped_pos = start
     end
     
-    if gapped_pos < k <= gapped_pos + (parent_len - ungapped_pos)
-        return String(parent(go))[ungapped_pos + (k - gapped_pos)]
+    if gapped_pos < i <= gapped_pos + (parent_len - ungapped_pos)
+        return UInt8(parent(go)[ungapped_pos + (i - gapped_pos)])
     end
-    throw(BoundsError(go, k))
+    throw(BoundsError(go, i))
 end
 
 Base.isvalid(olig::AbstractOlig, i::Int) = 1 <= i <= length(olig)
-
 Base.length(olig::Olig) = length(String(olig))
-Base.length(olig::DegenerateOlig) = length(String(olig))
+Base.length(olig::DegenOlig) = length(String(olig))
 Base.length(go::GappedOlig) = go.total_length
 Base.length(ov::OligView) = length(olig_range(ov))
 Base.isempty(olig::AbstractOlig) = length(olig) == 0
@@ -277,18 +251,17 @@ description(ov::OligView{<:GappedOlig}) = parent(parent(ov)).description
 
 hasgaps(::AbstractOlig) = false
 hasgaps(ov::OligView{Olig}) = false
-hasgaps(ov::OligView{DegenerateOlig}) = false
+hasgaps(ov::OligView{DegenOlig}) = false
 hasgaps(go::GappedOlig) = !isempty(go.gaps)
 hasgaps(ov::OligView) = any(c == '-' for c in ov)
 
-
 n_unique_oligs(::AbstractOlig) = BigInt(1)
-n_unique_oligs(d::DegenerateOlig) = d.n_unique_oligs
+n_unique_oligs(d::DegenOlig) = d.n_unique_oligs
 n_unique_oligs(ov::OligView) = reduce(*, (IUPAC_COUNTS[base] for base in ov), init=BigInt(1))
 n_unique_oligs(go::GappedOlig) = n_unique_oligs(parent(go))
 
 n_deg_pos(::AbstractOlig) = 0
-n_deg_pos(d::DegenerateOlig) = d.n_deg_pos
+n_deg_pos(d::DegenOlig) = d.n_deg_pos
 n_deg_pos(ov::OligView) = count(char -> char in DEGEN_BASES, ov)
 n_deg_pos(go::GappedOlig) = n_deg_pos(parent(go))
 
@@ -297,22 +270,19 @@ function Base.convert(::Type{T}, o::AbstractOlig) where {T<:AbstractOlig}
         return o
     end
     
-    if T <: Union{Olig, DegenerateOlig} && !(o isa Union{GappedOlig, OligView{<:GappedOlig}})
+    if T <: Union{Olig, DegenOlig} && !(o isa Union{GappedOlig, OligView{<:GappedOlig}})
         if T == Olig
             return Olig(String(o), description(o))
-        elseif T == DegenerateOlig
-            return DegenerateOlig(String(o), n_deg_pos(o), n_unique_oligs(o), description(o))
+        elseif T == DegenOlig
+            return DegenOlig(String(o), description(o))
         else
             throw(InexactError(:convert, T, o))
         end
     elseif T <: GappedOlig && o isa GappedOlig
-        target_param = T.parameters[1]
-        if target_param == Olig && n_deg_pos(o.parent) == 0
-            return GappedOlig(convert(Olig, o.parent), o.gaps)
-        elseif target_param == DegenerateOlig
-            return GappedOlig(convert(DegenerateOlig, o.parent), o.gaps)
+        if n_deg_pos(parent(o)) == 0
+            return GappedOlig(convert(Olig, parent(o)), o.gaps)
         else
-            throw(InexactError(:convert, T, o))
+            return GappedOlig(convert(DegenOlig, parent(o)), o.gaps)
         end
     else
         throw(MethodError(convert, (T, o)))
@@ -320,25 +290,22 @@ function Base.convert(::Type{T}, o::AbstractOlig) where {T<:AbstractOlig}
 end
 
 _base_olig_type(::Type{T}) where {T<:Olig} = Olig
-_base_olig_type(::Type{T}) where {T<:DegenerateOlig} = DegenerateOlig
-_base_olig_type(::Type{GappedOlig{U}}) where {U} = _base_olig_type(U)
+_base_olig_type(::Type{T}) where {T<:DegenOlig} = DegenOlig
+_base_olig_type(::Type{GappedOlig}) = GappedOlig
 _base_olig_type(::Type{OligView{U}}) where {U} = _base_olig_type(U)
 _base_olig_type(::Type{T}) where {T<:AbstractOlig} = T  # fallback
 
-_is_degenerate_type(::Type{T}) where {T<:Olig} = false
-_is_degenerate_type(::Type{T}) where {T<:DegenerateOlig} = true
-_is_degenerate_type(::Type{GappedOlig{U}}) where {U} = _is_degenerate_type(U)
-_is_degenerate_type(::Type{OligView{U}}) where {U} = _is_degenerate_type(U)
 _is_degenerate_type(::Type{T}) where {T<:AbstractOlig} = false
+_is_degenerate_type(::Type{T}) where {T<:AbstractDegen} = true
+_is_degenerate_type(::Type{OligView{T}}) where {T} = _is_degenerate_type(T)
 
 _has_gaps_type(::Type{T}) where {T<:AbstractOlig} = T <: Union{GappedOlig, OligView{<:GappedOlig}}
-function _promote_olig_type(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig}
-    result_base = _is_degenerate_type(T1) || _is_degenerate_type(T2) ? DegenerateOlig : Olig
-    return _has_gaps_type(T1) || _has_gaps_type(T2) ? GappedOlig{result_base} : result_base
-end
 
-Base.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig} = 
-    _promote_olig_type(T1, T2)
+function Base.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig}
+    is_deg_type = _is_degenerate_type(T1) || _is_degenerate_type(T2)
+    is_gapped_type = _has_gaps_type(T1) || _has_gaps_type(T2)
+    return is_gapped_type ? GappedOlig : is_deg_type ? DegenOlig : Olig
+end
 
 function Base.iterate(iter::NonDegenIterator)
     olig = parent(iter)
@@ -376,16 +343,14 @@ function Base.iterate(iter::NonDegenIterator, state)
     descr = string("Non-degen sample from: ", description(parent(iter)))
     return Olig(String(buffer), descr), (indices, options, lens, buffer, n)
 end
-
 Base.length(iter::NonDegenIterator) = iter.n_variants
 Base.eltype(::Type{<:NonDegenIterator}) = Olig
 
 nondegens(olig::Olig) = (olig,)
-nondegens(go::GappedOlig{Olig}) = (go,)
-nondegens(olig::DegenerateOlig) = NonDegenIterator(olig, n_unique_oligs(olig))
-function nondegens(go::GappedOlig{DegenerateOlig})
+nondegens(go::GappedOlig) = go.parent isa Olig ?
+    (go,) :
     (GappedOlig(olig, go.gaps) for olig in nondegens(go.parent))
-end
+nondegens(olig::DegenOlig) = NonDegenIterator(olig, n_unique_oligs(olig))
 function nondegens(ov::OligView)
     str = String(ov)
     descr = description(ov)
@@ -393,13 +358,13 @@ function nondegens(ov::OligView)
         go = GappedOlig(str, descr)
         return nondegens(go)
     else
-        deg_olig = DegenerateOlig(str, descr)
+        deg_olig = DegenOlig(str, descr)
         return nondegens(deg_olig)
     end
 end
 
-Base.rand(rng::AbstractRNG, olig::Olig) = olig
-function Base.rand(rng::AbstractRNG, olig::DegenerateOlig)
+Base.rand(::AbstractRNG, olig::Olig) = olig
+function Base.rand(rng::AbstractRNG, olig::DegenOlig)
     isempty(olig) && return EMPTY_OLIG
     buffer = Vector{Char}(undef, length(olig))
     @inbounds for (i, c) in enumerate(olig)
@@ -417,10 +382,7 @@ end
 Base.rand(::AbstractRNG, go::GappedOlig) = go
 Base.rand(olig::AbstractOlig) = rand(Random.GLOBAL_RNG, olig)
 
-function Base.iterate(go::GappedOlig)
-    length(go) == 0 && return nothing
-    return iterate(go, (1, 1, 1, 0))
-end
+Base.iterate(go::GappedOlig) = length(go) == 0 ? nothing : iterate(go, (1, 1, 1, 0))
 function Base.iterate(go::GappedOlig, state::Tuple{Int, Int, Int, Int})
     pos, ungapped_pos, gap_idx, remaining = state
     if pos > length(go)
@@ -449,9 +411,137 @@ function Base.iterate(go::GappedOlig, state::Tuple{Int, Int, Int, Int})
     return char, (pos + 1, new_ungapped, new_gap_idx, new_remaining)
 end
 Base.iterate(olig::AbstractOlig) = length(olig) == 0 ? nothing : (olig[1], 2)
-function Base.iterate(olig::AbstractOlig, state::Int)
-    if state > length(olig)
-        return nothing
+Base.iterate(olig::AbstractOlig, i::Int) = i>length(olig) ? nothing : (olig[i],i+1)
+
+
+
+
+##############################################
+###       SeqFold.jl method extensions     ###
+##############################################
+
+SeqFold.revcomp(olig::T) where T <: AbstractOlig = T(SeqFold.revcomp(String(olig); table=DNA_COMP_TABLE_DEG))
+SeqFold.complement(olig::T) where T <: AbstractOlig = T(SeqFold.complement(String(olig); table=DNA_COMP_TABLE_DEG))
+
+function SeqFold.gc_content(olig::AbstractOlig)::Float64
+    if hasgaps(olig)
+        return SeqFold.gc_content(parent(olig))  # Ignore gaps
     end
-    return olig[state], state + 1
+    if isempty(olig)
+        return NaN
+    end
+    total_gc = 0.0
+    for c in olig
+        total_gc += IUPAC_GC_CONTENT[c]
+    end
+    
+    return total_gc / length(olig)
 end
+function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_variants::Int=1000)::Float64
+    hasgaps(olig) && throw(ErrorException("Folding not supported for gapped sequences"))
+    isempty(olig) && return NaN
+    if n_unique_oligs(olig) == 1
+        return SeqFold.dg(String(olig); temp=temp)
+    end
+    dgs = Vector{Float64}(undef, min(n_unique_oligs(olig), max_variants))
+    @inbounds if n_unique_oligs(olig) > max_variants
+        for k in 1:max_variants
+            o = rand(olig)
+            dgs[k] = SeqFold.dg(String(o); temp=temp)
+        end
+    else
+        i = 1
+        for o in nondegens(olig)
+            dgs[i] = SeqFold.dg(String(o); temp=temp)
+            i += 1
+        end
+    end
+    return minimum(dgs)
+end
+function SeqFold.dg_cache(olig::AbstractOlig; temp::Real = 37.0)::Matrix{Float64}
+    if hasgaps(olig)
+        throw(ErrorException("Free energy cache not supported for gapped sequences"))
+    else
+        return SeqFold.dg_cache(String(Olig(olig)); temp=temp)
+    end
+end
+function SeqFold.tm(
+    olig1::AbstractOlig,
+    olig2::AbstractOlig; 
+    
+    conditions=:pcr,
+    conf_int::Real=0.8,
+    max_variants::Int=1000,
+    kwargs...
+)
+    (hasgaps(olig1) || hasgaps(olig2)) && throw(ErrorException("Melting temperature calculation not supported for gapped sequences"))
+    !(0 < conf_int <= 1) && throw(ArgumentError("conf_int must be in range (0, 1]"))
+
+    i = n_unique_oligs(olig1)
+    j = n_unique_oligs(olig2)
+
+    if i == 1 && j == 1
+        mean_Tm = SeqFold.tm(String(olig1), String(olig2); conditions=conditions, kwargs...)
+        return (
+            mean = mean_Tm,
+            conf = (mean_Tm, mean_Tm)
+        )
+    end
+
+    T = zeros(Float64, min(i * j, max_variants))
+    if i * j > max_variants
+        for k in 1:max_variants
+            o1 = rand(olig1)
+            o2 = rand(olig2)
+            @inbounds T[k] = SeqFold.tm(String(o1), String(o2); conditions=conditions, kwargs...)
+        end
+    else
+        counter = 1
+        for o1 in nondegens(olig1)
+            for o2 in nondegens(olig2)
+                @inbounds T[counter] = SeqFold.tm(String(o1), String(o2); conditions=conditions, kwargs...)
+                counter += 1
+            end
+        end
+    end
+
+    mean_Tm = mean(T)
+    alpha = (1 - conf_int) / 2
+    low = quantile(T, alpha)
+    high = quantile(T, 1 - alpha)
+
+    return (
+        mean = round(mean_Tm, digits=1),
+        conf = (round(low, digits=1), round(high, digits=1))
+    )
+end
+SeqFold.tm(
+    olig::AbstractOlig;
+    
+    conditions=:pcr,
+    conf_int::Real=0.9,
+    max_variants::Int=1000,
+    kwargs...
+) = SeqFold.tm(olig, SeqFold.complement(olig); conditions=conditions, conf_int=conf_int, max_variants=max_variants, kwargs...)
+
+function SeqFold.tm_cache(olig1::AbstractOlig, olig2::AbstractOlig; conditions=:pcr, kwargs...)::Matrix{Float64}
+    (hasgaps(olig1) || hasgaps(olig2)) && throw(ErrorException("Melting temperature cache not supported for gapped sequences"))
+    SeqFold.tm_cache(String(Olig(olig1)), String(Olig(olig2)); conditions=conditions, kwargs...)
+end
+SeqFold.tm_cache(
+    olig::AbstractOlig;
+    
+    conditions=:pcr,
+    kwargs...
+)::Matrix{Float64} = SeqFold.tm_cache(olig, SeqFold.complement(olig); conditions=conditions, kwargs...)
+
+SeqFold.dot_bracket(
+    olig::AbstractOlig, structs::Vector{SeqFold.Structure}
+) = SeqFold.dot_bracket(String(Olig(olig)), structs)
+
+SeqFold.gc_cache(olig::AbstractOlig)::Matrix{Float64} = SeqFold.gc_cache(String(Olig(olig)))
+
+
+
+include("show_oligs.jl")
+end # module
