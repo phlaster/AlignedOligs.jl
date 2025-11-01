@@ -20,8 +20,8 @@ struct Olig <: AbstractOlig
     seq::String
     description::String
 
-    function Olig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
-        isempty(seq) && return new("", "")
+    function Olig(seq::AbstractString, descr="")
+        isempty(seq) && return new("", string(descr))
         seq = uppercase(seq)
         seq_chars = Set(seq)
         if !issubset(seq_chars, NON_DEGEN_BASES)
@@ -37,7 +37,7 @@ struct DegenOlig <: AbstractDegen
     n_unique_oligs::BigInt
     description::String
 
-    function DegenOlig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
+    function DegenOlig(seq::AbstractString, descr="")
         isempty(seq) && return new("", 0, 1, string(descr))
 
         seq = uppercase(seq)
@@ -57,7 +57,9 @@ struct GappedOlig <: AbstractGapped
     gaps::Vector{Pair{Int}}
     total_length::Int
 
-    function GappedOlig(seq::AbstractString, descr::Union{AbstractString, Integer}="")
+    function GappedOlig(seq::AbstractString, descr="")
+        isempty(seq) && return new(DegenOlig("", descr), Pair{Int}[], 0)
+        
         parent_seq = filter(!=('-'), seq)
         underlying_olig = DegenOlig(parent_seq, descr)
 
@@ -66,7 +68,7 @@ struct GappedOlig <: AbstractGapped
         i = 1
         n = length(seq)
         
-        while i <= n
+        @inbounds while i <= n
             if seq[i] != '-'
                 parent_pos += 1
                 i += 1
@@ -109,19 +111,19 @@ const EMPTY_GAPPED = GappedOlig("")
 GappedOlig() = EMPTY_GAPPED
 
 Olig(chars::Vector{Char}, descr="") = Olig(String(chars), descr)
-function Olig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+function Olig(olig::AbstractOlig, descr="")
     new_descr = isempty(descr) ? description(olig) : descr
     return Olig(String(olig), new_descr)
 end
 
 DegenOlig(chars::Vector{Char}, descr="") = DegenOlig(String(chars), descr)
-function DegenOlig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+function DegenOlig(olig::AbstractOlig, descr="")
     new_descr = isempty(descr) ? description(olig) : descr
     DegenOlig(String(olig), new_descr)
 end
 
 GappedOlig(chars::Vector{Char}, descr="") = DegenOlig(String(chars), descr)
-function GappedOlig(olig::AbstractOlig, descr::Union{AbstractString, Integer}="")
+function GappedOlig(olig::AbstractOlig, descr="")
     new_descr = isempty(descr) ? description(olig) : descr
     GappedOlig(String(olig), new_descr)
 end

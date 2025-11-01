@@ -5,7 +5,7 @@ using AlignedOligs
 using MAFFT_jll
 using FastaIO
 
-function AlignedOligs._align!(fasta_content::Vector{Tuple{String,String}})
+function AlignedOligs.Alignments._align!(fasta_content::Vector{Tuple{String,String}})
     buffer = IOBuffer()
     writefasta(buffer, fasta_content; check_description=false)
     frombuffer = take!(buffer)

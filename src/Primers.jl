@@ -1,8 +1,22 @@
-struct Primer <: AbstractOlig
+module Primers
+
+export AbstractPrimer
+export Primer
+export construct_primers, best_pairs
+
+using ..Oligs
+using ..Alignments
+
+using SeqFold
+using ProgressMeter
+
+abstract type AbstractPrimer{T<:Union{Olig,DegenOlig}} end
+
+struct Primer{T} <: AbstractPrimer{T}
     msa::AbstractMSA
     pos::UnitRange{Int}
     is_forward::Bool
-    consensus::DegenerateOlig
+    consensus::T
     tail_length::Int
     tm::@NamedTuple{mean::Float64, conf::Tuple{Float64, Float64}}
     dg::Float64
@@ -17,62 +31,44 @@ function Primer(
     tail_length::Int=3,
     max_samples::Int=1000,
     tm_conf_int::Real=0.8,
-    tm_conds::Symbol=:pcr,
+    tm_conds=:pcr,
     dg_temp::Real=37.0,
-    slack::Real=0.0
+    slack::Real=0.0,
+    descr="Primer for $(nseqs(msa)) seq MSA at positions $interval"
 )
-    0 ≤ slack ≤ 1 || throw(ArgumentError("slack=$slack, has to be in [0,1]"))
-    0 ≤ dg_temp ≤ 120 || throw(ArgumentError("dg_temp=$dg_temp, which is unrealistic, has to be in [0,120]"))
-    # thresh = min_tresh(msa)
-    gapped_cons = consensus_degen(msa, interval)
+    gapped_cons = consensus_degen(msa, interval; slack=slack)
     if !is_forward
         gapped_cons = SeqFold.revcomp(gapped_cons)
     end
-    dir_str = is_forward ? "forward" : "reverse"
-    degeneracy = n_deg_pos(gapped_cons) > 0 ? "Degenerate" : "Non degenerate"
-    new_desc = "$degeneracy $dir_str primer for $(nseqs(msa)) seq MSA at positions $interval"
-    # if thresh > 0
-    #     new_desc *= ", minor_thresh=$thresh"
-    # end
-    underlying_olig = try 
-        DegenerateOlig(String(gapped_cons), new_desc)
-    catch e
-        if e isa ErrorException && occursin("'-'", e.msg)
-            throw(ArgumentError("Selected range has all gaps in some positions; cannot construct primer"))
-        else
-            rethrow()
-        end
-    end
-    Tm = tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
-    dG = dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
+    
+    underlying_olig = DegenOlig(String(gapped_cons), string(descr))
+    
+    Tm = SeqFold.tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+    dG = SeqFold.dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
     GC = SeqFold.gc_content(underlying_olig)
     Primer(msa, interval, is_forward, underlying_olig, tail_length, Tm, dG, GC, slack)
 end
 
-# String interface delegation
-Base.String(primer::Primer) = String(primer.consensus)
-Base.length(primer::Primer) = length(primer.consensus)
-Base.lastindex(primer::Primer) = lastindex(primer.consensus)
-Base.getindex(primer::Primer, i::Int) = primer.consensus[i]
-Base.getindex(primer::Primer, r::UnitRange{Int}) = primer.consensus[r]
-Base.iterate(primer::Primer) = iterate(primer.consensus)
-Base.iterate(primer::Primer, state) = iterate(primer.consensus, state)
-Base.ncodeunits(primer::Primer) = ncodeunits(primer.consensus)
-Base.codeunit(primer::Primer, i::Integer) = codeunit(primer.consensus, i)
-Base.isvalid(primer::Primer, i::Integer) = isvalid(primer.consensus, i)
-Base.isempty(primer::Primer) = isempty(primer.consensus)
-Base.rand(rng::AbstractRNG, primer::Primer) = rand(rng, primer.consensus)
-Base.rand(primer::Primer) = rand(primer.consensus)
-Base.:(==)(p1::Primer, p2::Primer) = String(p1) == String(p2)
-Base.:(==)(p::Primer, s::AbstractString) = String(p) == s
-Base.:(==)(s::AbstractString, p::Primer) = p == s
+Base.String(primer::AbstractPrimer) = String(primer.consensus)
+Base.length(primer::AbstractPrimer) = length(primer.consensus)
+Base.isempty(primer::AbstractPrimer) = isempty(primer.consensus)
+Base.iterate(primer::AbstractPrimer, state...) = iterate(primer.consensus, state...)
+Base.getindex(primer::AbstractPrimer, i::Int) = getindex(primer.consensus, i)
+Base.getindex(primer::AbstractPrimer, r::UnitRange{Int}) = getindex(primer.consensus, r)
 
-n_unique_oligs(primer::Primer) = n_unique_oligs(primer.consensus)
-n_deg_pos(primer::Primer) = n_deg_pos(primer.consensus)
-description(primer::Primer) = description(primer.consensus)
-hasgaps(primer::Primer) = false
-nondegens(primer::Primer) = nondegens(primer.consensus)
-olig_range(primer::Primer) = primer.pos
+Base.convert(::Type{DegenOlig}, primer::AbstractPrimer) = primer.consensus
+
+Oligs.n_unique_oligs(primer::AbstractPrimer) = n_unique_oligs(primer.consensus)
+Oligs.n_deg_pos(primer::AbstractPrimer) = n_deg_pos(primer.consensus)
+Oligs.description(primer::AbstractPrimer) = description(primer.consensus)
+Oligs.hasgaps(::AbstractPrimer) = false
+Oligs.nondegens(primer::AbstractPrimer) = nondegens(primer.consensus)
+Oligs.olig_range(primer::AbstractPrimer) = primer.pos
+
+SeqFold.tm(primer::AbstractPrimer) = primer.tm
+SeqFold.dg(primer::AbstractPrimer) = primer.dg
+SeqFold.gc_content(primer::AbstractPrimer) = primer.gc
+
 
 function construct_primers(
     msa::AbstractMSA;
@@ -89,23 +85,28 @@ function construct_primers(
     max_olig_variants::Int=100,
     max_samples::Int=5000,
     tm_conf_int::Real=0.2,
-    tm_conds::Symbol=:pcr,
+    tm_conds=:pcr,
     dg_temp::Real=mean(tm_range)
 )::Vector{Primer}
     0 ≤ slack < 1 || throw(ArgumentError("slack must be in [0,1)"))
+    
     primers = Primer[]
     L = length(msa)
     base_count = get_base_count(msa)
     prog = Progress(length(length_range); desc="Constructing... ", color=:white, barlen=10)
+    l = ReentrantLock()
+    
     Threads.@threads for len in length_range
         len > L && continue
         tail_len = min(tail_length, len)
         head_len = len - tail_len
         head_len < 0 && continue
+
         for startpos in 1:(L - len + 1)
             rng = startpos:(startpos + len - 1)
             depths = msadepth(msa, rng)
             any(<(min_msadepth), depths) && continue
+            
             if is_forward
                 head_rng = startpos:(startpos + head_len - 1)
                 tail_rng = (startpos + head_len):(startpos + len - 1)
@@ -113,24 +114,29 @@ function construct_primers(
                 head_rng = (startpos + tail_len):(startpos + len - 1)
                 tail_rng = startpos:(startpos + tail_len - 1)
             end
+            
+            # Check head degeneracy constraint
             if head_len > 0
                 head_freqs = @view base_count[:, head_rng]
                 head_deg = sum(count(>(slack), col) > 1 for col in eachcol(head_freqs))
                 head_deg > head_degen_pos && continue
             end
+            
+            # Check tail degeneracy constraint
             if tail_len > 0
                 tail_freqs = @view base_count[:, tail_rng]
                 tail_deg = sum(count(>(slack), col) > 1 for col in eachcol(tail_freqs))
                 tail_deg > tail_degen_pos && continue
             end
+            
+            # Generate consensus sequence
             gapped_cons = consensus_degen(msa, rng; slack=slack)
             if !is_forward
                 gapped_cons = SeqFold.revcomp(gapped_cons)
             end
             hasgaps(gapped_cons) && continue
-            underlying_olig = DegenerateOlig(String(gapped_cons), "Primer for $(height(msa)) seq MSA")
             
-            # APPLY FILTERS
+        
             n_unique_oligs(underlying_olig) > max_olig_variants && continue
             
             gc = SeqFold.gc_content(underlying_olig)
@@ -144,7 +150,6 @@ function construct_primers(
             
             primer = Primer(msa, rng, is_forward, underlying_olig, tail_len, Tm, dg_val, gc, slack)
 
-            l = ReentrantLock()
             lock(l)
             try
                 push!(primers, primer)
@@ -154,12 +159,9 @@ function construct_primers(
             end
         end
     end
+    
     return primers
 end
-
-SeqFold.tm(primer::Primer) = primer.tm
-SeqFold.dg(primer::Primer) = primer.dg
-SeqFold.gc_content(primer::Primer) = primer.gc
 
 function best_pairs(
     forwards::Vector{Primer},
@@ -173,6 +175,7 @@ function best_pairs(
 
     all(p -> p.is_forward, forwards)  || throw(ArgumentError("All forwards must be forward primers"))
     all(p -> !p.is_forward, reverses) || throw(ArgumentError("All reverses must be reverse primers"))
+    
     anymsa = root(rand(forwards).msa)
     all(root(p.msa) == anymsa for p in forwards) || throw(ArgumentError("All primers must refer to the same MSA"))
     all(root(p.msa) == anymsa for p in reverses) || throw(ArgumentError("All primers must refer to the same MSA"))
@@ -194,6 +197,12 @@ function best_pairs(
             end
         end
     end
+    
     sort!(pairs; by = p -> abs(p.first.tm.mean - p.second.tm.mean))
     return pairs
 end
+
+
+include("show_primers.jl")
+
+end # module

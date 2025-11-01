@@ -17,6 +17,8 @@ const BASE_COLORS = Dict{Char, Symbol}(
     '-' => :normal
 )
 
+const histbars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+
 function Base.show(io::IO, msa::AbstractMSA)
     n_sequences = nseqs(msa)
     if n_sequences == 0
@@ -35,7 +37,7 @@ function Base.show(io::IO, msa::AbstractMSA)
     catch
         terminal_height, terminal_width = 24, 80
     end
-    max_display_height = max(5, terminal_height - 7)
+    max_display_height = max(5, terminal_height - 9)  # Increased by 2 to account for hist bars and number line
     n_display_seqs = min(n_sequences, max_display_height)
 
     # Collect and process descriptions for displayed sequences
@@ -103,6 +105,43 @@ function Base.show(io::IO, msa::AbstractMSA)
 
     println(io, ":")
 
+    # Add histogram bars for depth with colored major nucleotide
+    if has_desc
+        print(io, " "^desc_width)  # Print spaces to align with descriptions
+    end
+    
+    hist_line = IOBuffer()
+    for dj in 1:length(displayed_cols_range)
+        # Get major nucleotide and depth for this column
+        pos_counts = zeros(Float64, 4)
+        for i in 1:n_sequences
+            c = getsequence(msa, i, dj)
+            probs = IUPAC_PROBS[c]
+            pos_counts .+= probs
+        end
+        
+        # Find the major nucleotide (highest probability base)
+        max_prob, max_idx = findmax(pos_counts)
+        major_nuc = ['A', 'C', 'G', 'T'][max_idx]
+        depth = sum(pos_counts)
+        
+        # Normalize depth to 0-1 scale for bar selection (assuming max possible depth is n_sequences)
+        max_possible_depth = n_sequences
+        normalized_depth = depth / max_possible_depth
+        
+        # Select bar character based on normalized depth (0-1) -> index 1-8
+        bar_index = clamp(floor(Int, normalized_depth * 8) + 1, 1, 8)
+        bar_char = histbars[bar_index]
+        
+        # Get color for the major nucleotide
+        color = get(BASE_COLORS, major_nuc, :normal)
+        
+        # Print the bar character with the color of the major nucleotide
+        printstyled(io, bar_char; color=color)
+    end
+    println(io)
+
+    # Print sequence lines
     for i in 1:n_display_seqs
         if has_desc
             print(io, padded_descs[i], " >")
@@ -116,8 +155,54 @@ function Base.show(io::IO, msa::AbstractMSA)
         if needs_width_ellipsis
             printstyled(io, "..."; color=:light_black, reverse=true)
         end
-        println(io)
+            println(io)
     end
+
+    # Add column number line
+    if has_desc
+        print(io, " "^desc_width)  # Print spaces to align with descriptions
+    end
+    
+    # Calculate start and end absolute positions
+    start_abs = abs_cols[1]
+    end_abs = abs_cols[end]
+    
+    # Create a character array for the number line, same length as displayed sequence
+    num_line_chars = fill(' ', length(displayed_cols_range))
+    
+    # Place the start number - first digit at first position
+    start_num_str = string(start_abs)
+    start_num_len = length(start_num_str)
+    if length(num_line_chars) >= start_num_len
+        for i in 1:start_num_len
+            if i <= length(num_line_chars)
+                num_line_chars[i] = start_num_str[i]
+            end
+        end
+    end
+    
+    # Place the end number - last digit at last position
+    end_num_str = string(end_abs)
+    end_num_len = length(end_num_str)
+    if length(num_line_chars) >= end_num_len
+        for i in 1:end_num_len
+            idx = length(num_line_chars) - end_num_len + i
+            if idx >= 1
+                num_line_chars[idx] = end_num_str[i]
+            end
+        end
+    end
+    
+    # Place '*' symbols at positions where the absolute position is divisible by 10
+    # and the character at that position is still a space (not overwritten by numbers)
+    for (rel_idx, abs_pos) in enumerate(abs_cols)
+        if abs_pos % 10 == 0 && num_line_chars[rel_idx] == ' '
+            num_line_chars[rel_idx] = '*'
+        end
+    end
+    
+    print(io, String(num_line_chars))
+    println(io)
 
     if n_display_seqs < n_sequences
         println(io, "...")

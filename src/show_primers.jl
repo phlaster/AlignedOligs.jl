@@ -1,41 +1,41 @@
 function _show_primer_common(io::IO, primer::AbstractPrimer)
-    println(io, "  Sequence: ", consensus_sequence(primer))
-    println(io, "  Length: ", length(consensus_oligomer(primer)))
-    println(io, "  Positions: ", position_range(primer))
+    println(io, "  Sequence: ", primer.consensus)
+    println(io, "  Length: ", length(primer.consensus))
+    println(io, "  Positions: ", primer.pos)
     println(io, "  Unique variants: ", n_unique_oligs(primer))
-    println(io, "  Melting temperature: ", round(melting_temperature(primer).mean, digits=1), "°C (",
-            round(melting_temperature(primer).conf[1], digits=1), "⋅",
-            round(melting_temperature(primer).conf[2], digits=1), "°C)")
-    println(io, "  Min ΔG: ", round(free_energy(primer), digits=2), " kcal/mol")
-    println(io, "  GC content: ", round(gc_content(primer) * 100, digits=1), "%")
+    println(io, "  Melting temperature: ", round(primer.tm.mean, digits=1), "°C (",
+            round(primer.tm.conf[1], digits=1), "⋅",
+            round(primer.tm.conf[2], digits=1), "°C)")
+    println(io, "  Min ΔG: ", round(primer.dg, digits=2), " kcal/mol")
+    println(io, "  GC content: ", round(primer.gc * 100, digits=1), "%")
     print(io, "  Description: \"", description(primer), "\"")
 end
 
 function Base.show(io::IO, primer::AbstractPrimer)
     max_width = 15
-    seq = consensus_sequence(primer)
+    seq = primer.consensus
     seq_display = length(seq) > max_width ? seq[1:max_width-3] * "..." : seq
 
-    dir_str = is_forward_primer(primer) ? "forward" : "reverse"
-    print(io, "Primer(\"", seq_display, "\", len=$(length(consensus_oligomer(primer))), ",
-          "pos=$(position_range(primer).start):$(position_range(primer).stop), $dir_str")
+    dir_str = primer.is_forward ? "forward" : "reverse"
+    print(io, "Primer(\"", seq_display, "\", len=$(length(primer.consensus)), ",
+          "pos=$(primer.pos.start):$(primer.pos.stop), $dir_str")
 
     print(io, ", degen=$(n_deg_pos(primer)), variants=$(n_unique_oligs(primer) > 10000 ? ">10k" : n_unique_oligs(primer)))")
-    print(io, ", Tm=$(round(melting_temperature(primer).mean, digits=1))°C, ",
-          "ΔG=$(round(free_energy(primer), digits=2))kcal/mol, ",
-          "GC=$(round(gc_content(primer) * 100, digits=1))%)")
+    print(io, ", Tm=$(round(primer.tm.mean, digits=1))°C, ",
+          "ΔG=$(round(primer.dg, digits=2))kcal/mol, ",
+          "GC=$(round(primer.gc * 100, digits=1))%)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", primer::AbstractPrimer)
-    dir_str = is_forward_primer(primer) ? "Forward" : "Reverse"
+    dir_str = primer.is_forward ? "Forward" : "Reverse"
     ndeg = n_deg_pos(primer)
     deg_status = ndeg > 0 ?
         "degenerate primer with $ndeg deg. positions" :
         "non-degenerate primer"
     println(io, "$dir_str $deg_status")
 
-    L = length(msa_reference(primer))
-    pos = position_range(primer)
+    L = length(primer.msa)
+    pos = primer.pos
     s, e = pos.start, pos.stop
     term_width = displaysize(io)[2] - 1
     L_str = string(L)
@@ -56,7 +56,7 @@ function Base.show(io::IO, ::MIME"text/plain", primer::AbstractPrimer)
         col_e = map_start_col + round(Int, (e - 1) * scale)
     end
 
-    if is_forward_primer(primer)
+    if primer.is_forward
         three_prime_col = col_e
         label = "\\" * string(s) * ":" * string(e) * ">"
     else
@@ -68,7 +68,7 @@ function Base.show(io::IO, ::MIME"text/plain", primer::AbstractPrimer)
     indent = max(0, three_prime_col - label_len)
     label_line = " "^indent * label
 
-    if is_forward_primer(primer)
+    if primer.is_forward
         println(io, label_line)
         println(io, bar)
         println(io)
@@ -85,24 +85,24 @@ function Base.show(io::IO, ::MIME"text/plain", pp::Pair{<:AbstractPrimer})
     fwd, rev = pp.first, pp.second
 
     # Validate that this is a proper forward/reverse pair
-    if !is_forward_primer(fwd) || is_forward_primer(rev)
+    if !fwd.is_forward || rev.is_forward
         invoke(show, Tuple{IO, MIME"text/plain", Pair}, io, MIME"text/plain"(), pp)
         return
     end
 
     try
-        msa = msa_reference(fwd)
-        if msa_reference(rev) !== msa
+        msa = fwd.msa
+        if rev.msa !== msa
             invoke(show, Tuple{IO, MIME"text/plain", Pair}, io, MIME"text/plain"(), pp)
             return
         end
 
         N = nseqs(msa)
         L = length(msa)
-        amp_start = position_range(fwd).start
-        amp_end = position_range(rev).stop
+        amp_start = fwd.pos.start
+        amp_end = rev.pos.stop
         amp_len = amp_end - amp_start + 1
-        overlap = position_range(fwd).stop >= position_range(rev).start ? "!!! OVERLAPPING !!! " : ""
+        overlap = fwd.pos.stop >= rev.pos.start ? "!!! OVERLAPPING !!! " : ""
         header = "$(overlap)PCR primer pair for $N seq. MSA, amplicon: $amp_start:$amp_end ($(amp_len)bp)"
         println(io, header)
 
@@ -127,7 +127,7 @@ function Base.show(io::IO, ::MIME"text/plain", pp::Pair{<:AbstractPrimer})
                 arrow_line[i] = '_'
             end
         end
-        label = position_range(fwd).stop >= position_range(rev).start ? "" : "$(amp_len)bp"
+        label = fwd.pos.stop >= rev.pos.start ? "" : "$(amp_len)bp"
         label_len = length(label)
         inner_len = col_amp_end - col_amp_start - 1
         if inner_len >= label_len + 2
@@ -144,10 +144,10 @@ function Base.show(io::IO, ::MIME"text/plain", pp::Pair{<:AbstractPrimer})
         end
         println(io, join(arrow_line))
         println(io, bar)
-        println(io, "Forward: ", consensus_sequence(fwd), " at ", position_range(fwd).start, ":", position_range(fwd).stop)
-        println(io, "Reverse: ", consensus_sequence(rev), " at ", position_range(rev).start, ":", position_range(rev).stop)
-        mean_tm = (melting_temperature(fwd).mean + melting_temperature(rev).mean) / 2
-        delta_tm = abs(melting_temperature(fwd).mean - melting_temperature(rev).mean) / 2
+        println(io, "Forward: ", fwd.consensus, " at ", fwd.pos.start, ":", fwd.pos.stop)
+        println(io, "Reverse: ", rev.consensus, " at ", rev.pos.start, ":", rev.pos.stop)
+        mean_tm = (fwd.tm.mean + rev.tm.mean) / 2
+        delta_tm = abs(fwd.tm.mean - rev.tm.mean) / 2
         print(io, "Tm: ", round(mean_tm, digits=1), "±", round(delta_tm, digits=1), " °C")
     catch e
         invoke(show, Tuple{IO, MIME"text/plain", Pair}, io, MIME"text/plain"(), pp)
