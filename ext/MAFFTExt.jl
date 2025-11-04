@@ -1,11 +1,12 @@
 __precompile__(false)
 module MAFFTExt
 
-using AlignedOligs
 using MAFFT_jll
 using FastaIO
 
-function AlignedOligs.Alignments._align!(fasta_content::Vector{Tuple{String,String}})
+import AlignedOligs.Alignments: _align!
+
+function _align!(fasta_content::Vector{NTuple{2, String}})
     buffer = IOBuffer()
     writefasta(buffer, fasta_content; check_description=false)
     frombuffer = take!(buffer)
