@@ -122,7 +122,7 @@ function Base.show(io::IO, msa::AbstractMSA)
         
         # Find the major nucleotide (highest probability base)
         max_prob, max_idx = findmax(pos_counts)
-        major_nuc = ['A', 'C', 'G', 'T'][max_idx]
+        major_nuc = "ACGT"[max_idx]
         depth = sum(pos_counts)
         
         # Normalize depth to 0-1 scale for bar selection (assuming max possible depth is n_sequences)
@@ -193,11 +193,15 @@ function Base.show(io::IO, msa::AbstractMSA)
         end
     end
     
-    # Place '*' symbols at positions where the absolute position is divisible by 10
-    # and the character at that position is still a space (not overwritten by numbers)
     for (rel_idx, abs_pos) in enumerate(abs_cols)
         if abs_pos % 10 == 0 && num_line_chars[rel_idx] == ' '
+            num_line_chars[rel_idx] = '⋅'
+        end
+        if abs_pos % 100 == 0 && num_line_chars[rel_idx] == '⋅'
             num_line_chars[rel_idx] = '*'
+        end
+        if abs_pos % 1000 == 0 && num_line_chars[rel_idx] == '*'
+            num_line_chars[rel_idx] = '#'
         end
     end
     
