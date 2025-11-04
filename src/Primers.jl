@@ -7,7 +7,6 @@ export construct_primers, best_pairs
 using ..Oligs
 using ..Alignments
 
-using SeqFold
 using ProgressMeter
 
 abstract type AbstractPrimer{T<:Union{Olig,DegenOlig}} end
@@ -38,16 +37,35 @@ function Primer(
 )
     gapped_cons = consensus_degen(msa, interval; slack=slack)
     if !is_forward
-        gapped_cons = SeqFold.revcomp(gapped_cons)
+        gapped_cons = _revcomp(gapped_consensus)
     end
     
     underlying_olig = DegenOlig(String(gapped_cons), string(descr))
     
-    Tm = SeqFold.tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
-    dG = SeqFold.dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
-    GC = SeqFold.gc_content(underlying_olig)
+    Tm = _ext_tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+    dG = _ext_dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
+    GC = _ext_gc_content(underlying_olig)
     Primer(msa, interval, is_forward, underlying_olig, tail_length, Tm, dG, GC, slack)
 end
+
+# These are overloaded in ext/SeqFoldExt.jl to load SeqFold.jl library dynamically
+_ext_revcomp(args...; kwargs...) = error(
+    "Primer construction requires SeqFold library to be loaded.\n" *
+    "In order to get this functionality, please `]add SeqFold` to your project\n" *
+    "and load it with `using SeqFold` before constructing primers.")
+_ext_tm(args...; kwargs...) = error(
+    "Primer construction requires SeqFold library to be loaded.\n" *
+    "In order to get this functionality, please `]add SeqFold` to your project\n" *
+    "and load it with `using SeqFold` before constructing primers.")
+_ext_dg(args...; kwargs...) = error(
+    "Primer construction requires SeqFold library to be loaded.\n" *
+    "In order to get this functionality, please `]add SeqFold` to your project\n" *
+    "and load it with `using SeqFold` before constructing primers.")
+_ext_gc_content(args...; kwargs...) = error(
+    "Primer construction requires SeqFold library to be loaded.\n" *
+    "In order to get this functionality, please `]add SeqFold` to your project\n" *
+    "and load it with `using SeqFold` before constructing primers."
+)
 
 Base.String(primer::AbstractPrimer) = String(primer.consensus)
 Base.length(primer::AbstractPrimer) = length(primer.consensus)
@@ -64,11 +82,6 @@ Oligs.description(primer::AbstractPrimer) = description(primer.consensus)
 Oligs.hasgaps(::AbstractPrimer) = false
 Oligs.nondegens(primer::AbstractPrimer) = nondegens(primer.consensus)
 Oligs.olig_range(primer::AbstractPrimer) = primer.pos
-
-SeqFold.tm(primer::AbstractPrimer) = primer.tm
-SeqFold.dg(primer::AbstractPrimer) = primer.dg
-SeqFold.gc_content(primer::AbstractPrimer) = primer.gc
-
 
 function construct_primers(
     msa::AbstractMSA;
@@ -132,20 +145,20 @@ function construct_primers(
             # Generate consensus sequence
             gapped_cons = consensus_degen(msa, rng; slack=slack)
             if !is_forward
-                gapped_cons = SeqFold.revcomp(gapped_cons)
+                gapped_cons = _ext_revcomp(gapped_cons)
             end
             hasgaps(gapped_cons) && continue
             
         
             n_unique_oligs(underlying_olig) > max_olig_variants && continue
             
-            gc = SeqFold.gc_content(underlying_olig)
+            gc = _ext_gc_content(underlying_olig)
             !(gc_range.start / 100 <= gc <= gc_range.stop / 100) && continue
             
-            dg_val = SeqFold.dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
+            dg_val = _ext_dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
             dg_val < min_delta_g && continue
             
-            Tm = SeqFold.tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+            Tm = _ext_tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
             (tm_range.stop < first(Tm.conf) || last(Tm.conf) < tm_range.start) && continue
             
             primer = Primer(msa, rng, is_forward, underlying_olig, tail_len, Tm, dg_val, gc, slack)

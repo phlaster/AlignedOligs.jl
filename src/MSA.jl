@@ -85,10 +85,10 @@ bval(msav::MSAView) = root(msav).bootstrap
 _is_full_height(msa::MSA) = true
 _is_full_height(msav::MSAView) = msav.rows == 1:nseqs(root(msav))
 
-function _align!(::Vector{Tuple{String,String}})
+function _align!(args...; kwargs...)
     # This is overloaded in ext/MAFFTExt.jl to load MAFFT_jll artifact dynamically
-    error("Alignment requires MAFFT_jll artifact to be installed.\\n" *
-          "If you need to align your FASTAs, please `]add MAFFT_jll` to your project\\n" *
+    error("Alignment requires MAFFT_jll artifact to be loaded.\n" *
+          "In order to align your FASTAs, please `]add MAFFT_jll` to your project\n" *
           "and load it with `using MAFFT_jll` before calling MSA with `mafft=true`.")
 end
 

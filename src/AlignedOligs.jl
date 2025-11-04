@@ -9,10 +9,6 @@ $(isnothing(get(ENV, "CI", nothing)) ? ("\nPackage local path: $(pathof(AlignedO
 """
 AlignedOligs
 
-using Reexport
-
-@reexport using SeqFold
-
 export Oligs, Primers, Alignments
 
 
