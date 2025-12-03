@@ -354,12 +354,12 @@ using MAFFT_jll
             @test_throws ArgumentError GappedOlig(olig, [3=>2, 3=>1]) # Overlapping gaps
             
             # Edge cases: empty and no gaps
-            empty_go = GappedOlig(Olig(""), Pair{Int}[])
+            empty_go = GappedOlig(Olig(""), Pair{Int, Int}[])
             @test String(empty_go) == ""
             @test length(empty_go) == 0
             @test isempty(empty_go) == true
             @test hasgaps(empty_go) == false
-            no_gap_go = GappedOlig(olig, Pair{Int}[])
+            no_gap_go = GappedOlig(olig, Pair{Int, Int}[])
             @test String(no_gap_go) == "ACGTACGT"
             @test length(no_gap_go) == 8
             @test hasgaps(no_gap_go) == false
@@ -421,7 +421,7 @@ using MAFFT_jll
             # Iteration
             @test collect(go) == collect(gapped_seq)
             @test collect(go_deg) == collect(gapped_deg_seq)
-            empty_iter = GappedOlig(Olig(""), Pair{Int}[])
+            empty_iter = GappedOlig(Olig(""), Pair{Int, Int}[])
             @test iterate(empty_iter) === nothing
             
             # Nondegens for degenerate parent
@@ -535,7 +535,7 @@ using MAFFT_jll
                 @test tm_view.conf[1] <= tm_view.mean <= tm_view.conf[2]
                 @test SeqFold.gc_content(deg_olig) ≈ (0.0 + 1.0 + 1.0 + 0.5) / 4  # A,C,G,N weights
                 @test SeqFold.gc_content(deg_view) ≈ (1.0 + 1.0 + 0.5) / 3  # C,G,N
-                no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int}[])
+                no_gap_go = GappedOlig(Olig("ACGT"), Pair{Int, Int}[])
                 @test SeqFold.tm(no_gap_go, conditions=:pcr).mean == SeqFold.tm("ACGT", conditions=:pcr)
             end
 
