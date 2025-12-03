@@ -35,7 +35,7 @@ function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_variants::Int=1000)
     dgs = Vector{Float64}(undef, min(n_unique_oligs(olig), max_variants))
     @inbounds if n_unique_oligs(olig) > max_variants
         for k in 1:max_variants
-            o = rand(olig)
+            o = sampleNondeg(olig)
             dgs[k] = SeqFold.dg(String(o); temp=temp)
         end
     else
@@ -80,8 +80,8 @@ function SeqFold.tm(
     T = zeros(Float64, min(i * j, max_variants))
     if i * j > max_variants
         for k in 1:max_variants
-            o1 = rand(olig1)
-            o2 = rand(olig2)
+            o1 = sampleNondeg(olig1)
+            o2 = sampleNondeg(olig2)
             @inbounds T[k] = SeqFold.tm(String(o1), String(o2); conditions=conditions, kwargs...)
         end
     else
