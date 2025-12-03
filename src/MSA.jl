@@ -18,15 +18,16 @@ struct MSA <: AbstractMSA
     base_count::Matrix{Float64}
     bootstrap::Int
 
-    function _compute_base_counts!(
-        base_count::Matrix{Float64}, 
-        seqs::Vector{<:AbstractGapped}, 
-        bootstrap::Int, 
-        n::Int, 
-        L::Int; 
+    function _compute_base_counts(
+        seqs::Vector{<:AbstractString}, 
+        bootstrap::Int;
         progress_label::String, 
         barlen::Int
     )
+        n = length(seqs)
+        L = length(first(seqs))
+        all(length(s) == L for s in seqs) || throw(ArgumentError("All sequences must have the same length"))
+        base_count = zeros(4, L)
         if bootstrap > 0
             @showprogress desc=progress_label barlen=barlen for b in 1:bootstrap
                 boot_rows = rand(1:n, n)
@@ -35,8 +36,8 @@ struct MSA <: AbstractMSA
                 Threads.@threads for j in 1:L
                     pos_counts = zeros(4)
                     for s in boot_seqs
-                        c = s[j]
-                        probs = IUPAC_PROBS[c]
+                        c = uppercase(s[j])
+                        probs = get(IUPAC_PROBS, c, (.0,.0,.0,.0))
                         pos_counts .+= probs
                     end
                     current_freq = pos_counts / n
@@ -47,27 +48,24 @@ struct MSA <: AbstractMSA
             Threads.@threads for j in 1:L
                 counts = zeros(4)
                 for s in seqs
-                    c = s[j]
-                    probs = IUPAC_PROBS[c]
+                    c = uppercase(s[j])
+                    probs = get(IUPAC_PROBS, c, (.0,.0,.0,.0))
                     counts .+= probs
                 end
                 base_count[:, j] = counts / n
             end
         end
+        return base_count
     end
-    function MSA(seqs::Vector{<:AbstractGapped}; bootstrap::Int=0, seed=nothing)
+    function MSA(seqs::Vector{<:AbstractString}; bootstrap::Int=0, seed=nothing)
         bootstrap >= 0 || throw(ArgumentError("bootstrap must be non-negative"))
         isnothing(seed) || Random.seed!(seed)
 
-        isempty(seqs) && return new(seqs, zeros(4, 0), bootstrap)
+        isempty(seqs) && return new(GappedOlig[], zeros(4, 0), bootstrap)
 
-        L = length(first(seqs))
-        all(length(s) == L for s in seqs) || throw(ArgumentError("All gapped sequences must have the same length"))
-        n = length(seqs)
-
-        base_count = zeros(4, L)
-        _compute_base_counts!(base_count, seqs, bootstrap, n, L; progress_label="Bootstrap, $bootstrap it.", barlen=19)
-        return new(seqs, base_count, bootstrap)
+        base_count = _compute_base_counts(seqs, bootstrap; progress_label="Bootstrap, $bootstrap it.", barlen=19)
+        gapped_seqs = GappedOlig.(seqs)
+        return new(gapped_seqs, base_count, bootstrap)
     end
 end
 
@@ -77,13 +75,13 @@ struct MSAView <: AbstractMSA
     cols::UnitRange{Int}
 end
 
+_returnrows(m::AbstractMSA) = m
+_returnrows(m::MSAView) = MSAView(m.parent, 1:height(m.parent), m.cols)
+
 root(msa::MSA) = msa
 root(msav::MSAView) = root(msav.parent)
 bval(msa::MSA) = msa.bootstrap
 bval(msav::MSAView) = root(msav).bootstrap
-
-_is_full_height(msa::MSA) = true
-_is_full_height(msav::MSAView) = msav.rows == 1:nseqs(root(msav))
 
 function _align!(args...; kwargs...)
     # This is overloaded in ext/MAFFTExt.jl to load MAFFT_jll artifact dynamically
@@ -217,6 +215,9 @@ function getsequence(v::MSAView, row::Int)
 end
 getsequence(msa::AbstractMSA, row::Int, col::Int) = getsequence(msa, row)[col]
 
+
+_is_full_height(msa::MSA) = true
+_is_full_height(msav::MSAView) = msav.rows == 1:nseqs(root(msav))
 """
     get_base_count(msa::AbstractMSA, pos::Int)
     get_base_count(msa::AbstractMSA, interval::UnitRange{Int})
@@ -274,10 +275,10 @@ Returns:
 Depth is the sum of base probabilities, capped at 1.0.
 """
 function msadepth(msa::AbstractMSA, pos::Int)::Float64
-    min(1.0, sum(view(msa.base_count, :, pos)))
+    min(1.0, sum(get_base_count(msa, pos)))
 end
 function msadepth(msa::AbstractMSA, interval::UnitRange{Int})::Vector{Float64}
-    min.(1.0, sum(view(msa.base_count, :, interval), dims=1))
+    [msadepth(msa, pos) for pos in interval]
 end
 function msadepth(msa::AbstractMSA)::Vector{Float64}
     return msadepth(msa, 1:length(msa))
@@ -362,7 +363,7 @@ Returns:
 
 Bases with frequency > slack are included in the degeneracy.
 """
-function consensus_degen(msa::AbstractMSA, pos::Int; slack::Real=0.0)
+function consensus_degen(msa::AbstractMSA, pos::Int; slack::Real=0.0)::Char
     0 ≤ slack < 1 || throw(ArgumentError("slack must be in [0,1)"))
     p = get_base_count(msa, pos)
     if sum(p) == 0
@@ -370,10 +371,10 @@ function consensus_degen(msa::AbstractMSA, pos::Int; slack::Real=0.0)
     end
     active = findall(>(slack), p)
     isempty(active) && return '-'
-    bs = sort!(collect(NON_DEGEN_BASES[active]))
+    bs = NON_DEGEN_BASES[active]
     return IUPAC_V2B[bs]
 end
-function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa); slack::Real=0.0)
+function consensus_degen(msa::AbstractMSA, interval::UnitRange{Int}=1:width(msa); slack::Real=0.0)::GappedOlig
     seq = join(consensus_degen(msa, j; slack=slack) for j in interval)
     desc = "Degenerate consensus for $(nseqs(msa)) seq MSA"
     return GappedOlig(seq, desc)
@@ -507,8 +508,8 @@ function _pairwise_distance(msa::AbstractMSA, i::Int, j::Int; ignore_gaps::Bool=
             continue  # Exact match
         end
         # Probabilistic mismatch for IUPAC/degenerate
-        probs_i = IUPAC_PROBS[c_i]
-        probs_j = IUPAC_PROBS[c_j]
+        probs_i = get(IUPAC_PROBS, c_i, (.0,.0,.0,.0))
+        probs_j = get(IUPAC_PROBS, c_j, (.0,.0,.0,.0))
         match_prob = sum(probs_i .* probs_j)
         diff_sum += 1.0 - match_prob
     end
