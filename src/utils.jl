@@ -1,32 +1,16 @@
+const NON_DEGEN_BASES = "ACGT" |> collect |> sort |> Tuple
+const DEGEN_BASES = "MRWSYKVHDBN" |> collect |> sort |> Tuple
+const ALL_BASES = [NON_DEGEN_BASES..., DEGEN_BASES...] |> sort |> Tuple
+
 const IUPAC_B2V = Dict(
     'A'=>Tuple("A"),  'C'=>Tuple("C"),  'G'=>Tuple("G"),  'T'=>Tuple("T"),
     'R'=>Tuple("AG"), 'Y'=>Tuple("CT"), 'S'=>Tuple("CG"), 'W'=>Tuple("AT"),
     'K'=>Tuple("GT"), 'M'=>Tuple("AC"), 'B'=>Tuple("CGT"),'D'=>Tuple("AGT"),
     'H'=>Tuple("ACT"),'V'=>Tuple("ACG"),'N'=>Tuple("ACGT")
 )
-const IUPAC_V2B = Dict(
-    collect("A")=>'A', collect("C")=>'C', collect("G")=>'G', collect("T")=>'T',
-    collect("AC")=>'M', collect("AG")=>'R', collect("AT")=>'W', collect("CG")=>'S',
-    collect("CT")=>'Y', collect("GT")=>'K', collect("ACG")=>'V', collect("ACT")=>'H',
-    collect("AGT")=>'D', collect("CGT")=>'B', collect("ACGT")=>'N',
-)
-
-const IUPAC_COUNTS = Dict(
-    'A'=>1, 'C'=>1, 'G'=>1, 'T'=>1,
-    'M'=>2, 'R'=>2, 'W'=>2, 'S'=>2, 'Y'=>2, 'K'=>2,
-    'V'=>3, 'H'=>3, 'D'=>3, 'B'=>3, 'N'=>4
-)
-
-const IUPAC_GC_CONTENT = Dict(
-    'A'=>0.0, 'T'=>0.0, 'C'=>1.0, 'G'=>1.0,
-    'R'=>0.5, 'Y'=>0.5, 'S'=>1.0, 'W'=>0.0,
-    'K'=>0.5, 'M'=>0.5, 'B'=>2/3, 'D'=>1/3,
-    'H'=>1/3, 'V'=>2/3, 'N'=>0.5
-)
-
-const NON_DEGEN_BASES = Tuple("ACGT")
-const DEGEN_BASES = Tuple("MRWSYKVHDBN")
-const ALL_BASES = Tuple("ACGTMRWSYKVHDBN")
+const IUPAC_V2B = Dict(v=>k for (k,v) in IUPAC_B2V)
+const IUPAC_COUNTS = Dict(k=>length(v) for (k,v) in IUPAC_B2V)
+const IUPAC_GC_CONTENT = Dict(k=>count(in("CG"), v)/length(v) for (k,v) in IUPAC_B2V)
 
 const DNA_COMP_TABLE_DEG = let 
     _comp_dna_deg(b::UInt8)::UInt8 =
@@ -62,6 +46,5 @@ const IUPAC_PROBS = let
         end
         d[k] = Tuple(probs)
     end
-    d['-'] = (0.,0.,0.,0.)
     d
 end
