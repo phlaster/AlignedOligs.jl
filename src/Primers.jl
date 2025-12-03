@@ -8,6 +8,7 @@ using ..Oligs
 using ..Alignments
 
 using ProgressMeter
+using Statistics
 
 abstract type AbstractPrimer{T<:Union{Olig,DegenOlig}} end
 
@@ -35,10 +36,8 @@ function Primer(
     slack::Real=0.0,
     descr="Primer for $(nseqs(msa)) seq MSA at positions $interval"
 )
-    gapped_cons = consensus_degen(msa, interval; slack=slack)
-    if !is_forward
-        gapped_cons = _revcomp(gapped_consensus)
-    end
+    _cons = consensus_degen(msa, interval; slack=slack)
+    gapped_cons = is_forward ? _cons : _ext_revcomp(_cons)
     
     underlying_olig = DegenOlig(String(gapped_cons), string(descr))
     
@@ -116,52 +115,49 @@ function construct_primers(
         head_len < 0 && continue
 
         for startpos in 1:(L - len + 1)
-            rng = startpos:(startpos + len - 1)
-            depths = msadepth(msa, rng)
+            interval::UnitRange{Int} = startpos:(startpos + len - 1)
+            depths = msadepth(msa, interval)
             any(<(min_msadepth), depths) && continue
             
             if is_forward
-                head_rng = startpos:(startpos + head_len - 1)
-                tail_rng = (startpos + head_len):(startpos + len - 1)
+                head_interval = startpos:(startpos + head_len - 1)
+                tail_interval = (startpos + head_len):(startpos + len - 1)
             else
-                head_rng = (startpos + tail_len):(startpos + len - 1)
-                tail_rng = startpos:(startpos + tail_len - 1)
+                head_interval = (startpos + tail_len):(startpos + len - 1)
+                tail_interval = startpos:(startpos + tail_len - 1)
             end
             
-            # Check head degeneracy constraint
             if head_len > 0
-                head_freqs = @view base_count[:, head_rng]
+                head_freqs = @view base_count[:, head_interval]
                 head_deg = sum(count(>(slack), col) > 1 for col in eachcol(head_freqs))
                 head_deg > head_degen_pos && continue
             end
             
-            # Check tail degeneracy constraint
             if tail_len > 0
-                tail_freqs = @view base_count[:, tail_rng]
+                tail_freqs = @view base_count[:, tail_interval]
                 tail_deg = sum(count(>(slack), col) > 1 for col in eachcol(tail_freqs))
                 tail_deg > tail_degen_pos && continue
             end
-            
-            # Generate consensus sequence
-            gapped_cons = consensus_degen(msa, rng; slack=slack)
-            if !is_forward
-                gapped_cons = _ext_revcomp(gapped_cons)
-            end
+
+            _cons = consensus_degen(msa, interval; slack=slack)
+            gapped_cons = is_forward ? _cons : _ext_revcomp(_cons)
             hasgaps(gapped_cons) && continue
             
-        
-            n_unique_oligs(underlying_olig) > max_olig_variants && continue
+            cons = DegenOlig(gapped_cons)
+            n_unique_oligs(cons) > max_olig_variants && continue
+
+            cons = n_unique_oligs(cons) == 1 ? Olig(cons) : cons
             
-            gc = _ext_gc_content(underlying_olig)
+            gc = _ext_gc_content(cons)
             !(gc_range.start / 100 <= gc <= gc_range.stop / 100) && continue
             
-            dg_val = _ext_dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
+            dg_val = _ext_dg(cons; max_variants=max_samples, temp=dg_temp)
             dg_val < min_delta_g && continue
             
-            Tm = _ext_tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+            Tm = _ext_tm(cons; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
             (tm_range.stop < first(Tm.conf) || last(Tm.conf) < tm_range.start) && continue
             
-            primer = Primer(msa, rng, is_forward, underlying_olig, tail_len, Tm, dg_val, gc, slack)
+            primer = Primer(msa, interval, is_forward, cons, tail_len, Tm, dg_val, gc, slack)
 
             lock(l)
             try
@@ -189,7 +185,7 @@ function best_pairs(
     all(p -> p.is_forward, forwards)  || throw(ArgumentError("All forwards must be forward primers"))
     all(p -> !p.is_forward, reverses) || throw(ArgumentError("All reverses must be reverse primers"))
     
-    anymsa = root(rand(forwards).msa)
+    anymsa = root(first(forwards).msa)
     all(root(p.msa) == anymsa for p in forwards) || throw(ArgumentError("All primers must refer to the same MSA"))
     all(root(p.msa) == anymsa for p in reverses) || throw(ArgumentError("All primers must refer to the same MSA"))
     
