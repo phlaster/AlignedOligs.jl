@@ -81,7 +81,6 @@ end
 end
 
 @testset "GappedOlig Construction" begin
-    # Singleton equality
     @test GappedOlig() === GappedOlig("")
     
     for seq in ["-", "--A--", "A--", "--A", "A---T", "-G-C-", "ACGT", ""]
@@ -186,9 +185,8 @@ end
     
     nondeg = Olig("ACGT", "test")
     nondeg_iter = collect(nondegens(nondeg))
-    @test length(nondeg_iter) == 1
-    @test nondeg_iter[1] == nondeg
-    @test description(nondeg_iter[1]) == "Non-degen sample from: test"
+    @test only(nondeg_iter) == nondeg
+    @test description(only(nondeg_iter)) == "test"
     
     deg = DegenOlig("ACN", "test")
     nondeg_iter = collect(nondegens(deg))
@@ -197,9 +195,12 @@ end
     @test all(description(o) == "Non-degen sample from: test" for o in nondeg_iter)
     
     gapped_deg = GappedOlig("A-N-", "test")
-    nondeg_iter = collect(nondegens(gapped_deg))
+    @test_throws ErrorException nondegens(gapped_deg)
+    
+    gapped_nogaps_deg = GappedOlig("AANC", "test")
+    nondeg_iter = collect(nondegens(gapped_nogaps_deg))
     @test length(nondeg_iter) == 4
-    expected = ["A-A-", "A-C-", "A-G-", "A-T-"]
+    expected = ["AAAC", "AAGC", "AACC", "AATC"]
     @test Set(String.(nondeg_iter)) == Set(expected)
     
     for _ in 1:NUM_RANDOM_TESTS
@@ -211,95 +212,94 @@ end
     end
 end
 
-# @testset "Sampling Functions" begin
-#     for T in (Olig, DegenOlig, GappedOlig)
-#         for _ in 1:NUM_RANDOM_TESTS
-#             len = rand(1:50)
-#             olig = rolg(T, len)
-#             sampled = sampleChar(olig)
-#             @test sampled isa Char
-#             @test sampled in String(olig)
-#         end
-#         @test_throws ArgumentError sampleChar(rolg(T, 0))
-#     end
+@testset "Sampling Functions" begin
+    for T in (Olig, DegenOlig, GappedOlig)
+        for _ in 1:NUM_RANDOM_TESTS
+            len = rand(1:50)
+            olig = rolg(T, len)
+            sampled = sampleChar(olig)
+            @test sampled isa Char
+            @test sampled in String(olig)
+        end
+        @test_throws ArgumentError sampleChar(rolg(T, 0))
+    end
     
-#     for T in (Olig, DegenOlig, GappedOlig)
-#         for _ in 1:NUM_RANDOM_TESTS
-#             len = rand(5:50)
-#             olig = rolg(T, len)
-#             view_len = rand(1:len)
-#             view = sampleView(olig, view_len)
-#             @test view isa OligView
-#             @test length(view) == view_len
-#             @test String(view) in String(olig)
-#         end
-#         empty_olig = rolg(T, 0)
-#         @test_throws ArgumentError sampleView(empty_olig, 1)
-#         non_empty = rolg(T, 3)
-#         @test_throws ArgumentError sampleView(non_empty, 4)
-#     end
+    for T in (Olig, DegenOlig, GappedOlig)
+        for _ in 1:NUM_RANDOM_TESTS
+            len = rand(5:50)
+            olig = rolg(T, len)
+            view_len = rand(1:len)
+            view = sampleView(olig, view_len)
+            @test view isa OligView
+            @test length(view) == view_len
+            @test occursin(String(view), String(olig))
+        end
+        empty_olig = rolg(T, 0)
+        @test_throws ArgumentError sampleView(empty_olig, 1)
+        non_empty = rolg(T, 3)
+        @test_throws ArgumentError sampleView(non_empty, 4)
+    end
     
-#     for _ in 1:NUM_RANDOM_TESTS
-#         nondeg = rolg(Olig, rand(0:50))
-#         @test sampleNondeg(nondeg) == nondeg
+    for _ in 1:NUM_RANDOM_TESTS
+        nondeg = rolg(Olig, rand(0:50))
+        @test sampleNondeg(nondeg) == nondeg
         
-#         deg = rolg(DegenOlig, rand(1:50))
-#         sampled = sampleNondeg(deg)
-#         @test sampled isa Olig
-#         @test length(sampled) == length(deg)
-#         @test all(c in NON_DEGEN_BASES for c in String(sampled))
+        deg = rolg(DegenOlig, rand(1:50))
+        sampled = sampleNondeg(deg)
+        @test sampled isa DegenOlig
+        @test length(sampled) == length(deg)
+        @test all(c in NON_DEGEN_BASES for c in String(sampled))
         
-#         gapped_deg = rolg(GappedOlig, rand(1:50))
-#         sampled = sampleNondeg(gapped_deg)
-#         @test sampled isa GappedOlig
-#         @test length(sampled) == length(gapped_deg)
-#         @test all(c in NON_DEGEN_BASES || c == '-' for c in String(sampled))
-#         @test n_deg_pos(sampled) == 0
-#     end
-# end
+        gapped_deg = rolg(GappedOlig, rand(1:50))
+        sampled = sampleNondeg(gapped_deg)
+        @test sampled isa GappedOlig
+        @test length(sampled) == length(gapped_deg)
+        @test all(c in NON_DEGEN_BASES || c == '-' for c in String(sampled))
+        @test n_deg_pos(sampled) == 0
+    end
+end
 
+@testset "Conversion and Promotion" begin
+    @test convert(Olig, DegenOlig("ACGT")) == Olig("ACGT")
+    @test convert(DegenOlig, Olig("ACGT")) == DegenOlig("ACGT")
+    @test convert(GappedOlig, Olig("ACGT")) == GappedOlig("ACGT")
+    
+    @test promote_type(Olig, DegenOlig) == DegenOlig
+    @test promote_type(Olig, GappedOlig) == GappedOlig
+    @test promote_type(DegenOlig, GappedOlig) == GappedOlig
+    @test promote_type(Olig, String) == Olig
+    @test promote_type(DegenOlig, SubString) == DegenOlig
+    
+    @test Olig("A") == "A"
+    @test "A" == Olig("A")
+    @test DegenOlig("N") != Olig("A")
+    gapped = GappedOlig("A-C")
+    @test gapped == GappedOlig("A-C")
+    @test gapped != GappedOlig("AC-")
+end
 
-# @testset "Conversion and Promotion" begin
-#     @test convert(Olig, DegenOlig("ACGT")) == Olig("ACGT")
-#     @test convert(DegenOlig, Olig("ACGT")) == DegenOlig("ACGT")
-#     @test convert(GappedOlig, Olig("ACGT")) == GappedOlig("ACGT")
+@testset "Iteration and Base Functions" begin
+    for T in (Olig, DegenOlig, GappedOlig)
+        for _ in 1:NUM_RANDOM_TESTS
+            len = rand(0:50)
+            olig = rolg(T, len)
+            iterated = collect(olig)
+            @test length(iterated) == len
+            @test String(olig) == join(iterated)
+        end
+    end
     
-#     @test promote_type(Olig, DegenOlig) == DegenOlig
-#     @test promote_type(Olig, GappedOlig) == GappedOlig
-#     @test promote_type(DegenOlig, GappedOlig) == GappedOlig
-#     @test promote_type(Olig, String) == Olig
-#     @test promote_type(DegenOlig, SubString) == DegenOlig
+    gapped = GappedOlig("--A--")
+    @test collect(gapped) == ['-','-','A','-','-']
     
-#     @test Olig("A") == "A"
-#     @test "A" == Olig("A")
-#     @test DegenOlig("N") != Olig("A")
-#     gapped = GappedOlig("A-C")
-#     @test gapped == GappedOlig("A-C")
-#     @test gapped != GappedOlig("AC-")
-# end
-
-# @testset "Iteration and Base Functions" begin
-#     for T in (Olig, DegenOlig, GappedOlig)
-#         for _ in 1:NUM_RANDOM_TESTS
-#             len = rand(0:50)
-#             olig = rolg(T, len)
-#             iterated = collect(olig)
-#             @test length(iterated) == len
-#             @test String(olig) == join(iterated)
-#         end
-#     end
-    
-#     gapped = GappedOlig("--A--")
-#     @test collect(gapped) == ['-','-','A','-','-']
-    
-#     for T in (Olig, DegenOlig, GappedOlig)
-#         for _ in 1:NUM_RANDOM_TESTS
-#             len = rand(0:50)
-#             olig = rolg(T, len)
-#             @test isempty(olig) == (len == 0)
-#             @test length(olig) == len
-#             @test lastindex(olig) == len
-#             @test ncodeunits(olig) == len
-#         end
-#     end
-# end
+    for T in (Olig, DegenOlig, GappedOlig)
+        for _ in 1:NUM_RANDOM_TESTS
+            len = rand(0:50)
+            olig = rolg(T, len)
+            @test isempty(olig) == (len == 0)
+            @test length(olig) == len
+            @test lastindex(olig) == len
+            @test ncodeunits(olig) == len
+        end
+    end
+end
