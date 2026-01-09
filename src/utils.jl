@@ -48,3 +48,23 @@ const IUPAC_PROBS = let
     end
     d
 end
+
+const MAX_GC_OPTIONS = let
+    d = Dict{Char, Tuple}()
+    for (k0, v0) in IUPAC_B2V
+        _v = filter(in("GC"), v0)
+        v = isempty(_v) ? v0 : _v
+        d[k0] = v
+    end
+    d
+end
+
+const MIN_GC_OPTIONS = let
+    d = Dict{Char, Tuple}()
+    for (k0, v0) in IUPAC_B2V
+        _v = filter(!in("GC"), v0)
+        v = isempty(_v) ? v0 : _v
+        d[k0] = v
+    end
+    d
+end

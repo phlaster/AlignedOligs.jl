@@ -8,7 +8,7 @@ export Olig, DegenOlig, GappedOlig, OligView
 export olig_range, description
 export NonDegenIterator, nondegens
 export hasgaps, n_deg_pos, n_unique_oligs
-export sampleChar, sampleView, sampleNondeg
+export sampleChar, sampleView, sampleNondeg, sample_max_gc, sample_min_gc
 
 abstract type AbstractOlig <: AbstractString end
 abstract type AbstractDegen <: AbstractOlig end
@@ -397,6 +397,37 @@ function sampleNondeg(d::T) where T <: AbstractOlig
     descr = isempty(d) ? "Non-degen sample" : "Non-degen sample of $d"
     return OutType(String(buffer), descr)
 end
+
+function sample_max_gc(d::T) where T <: AbstractOlig
+    (isempty(d) || T == Olig) && return d
+    
+    buffer = Vector{Char}(undef, length(d))
+    @inbounds for (i, c) in enumerate(d)
+        options = get(MAX_GC_OPTIONS, c, ('-',))
+        buffer[i] = rand(options)
+    end
+    
+    base_descr = description(d)
+    descr = isempty(base_descr) ? "Max GC content sample" : "Max GC content sample of $base_descr"
+    
+    return T(String(buffer), descr)
+end
+
+function sample_min_gc(d::T) where T <: AbstractOlig
+    (isempty(d) || T == Olig) && return d
+    
+    buffer = Vector{Char}(undef, length(d))
+    @inbounds for (i, c) in enumerate(d)
+        options = get(MIN_GC_OPTIONS, c, ('-',))
+        buffer[i] = rand(options)
+    end
+    
+    base_descr = description(d)
+    descr = isempty(base_descr) ? "Min GC content sample" : "Min GC content sample of $base_descr"
+    
+    return T(String(buffer), descr)
+end
+
 
 Base.iterate(go::GappedOlig) = length(go) == 0 ? nothing : iterate(go, (1, 1, 1, 0))
 function Base.iterate(go::GappedOlig, state::NTuple{4, Int})
