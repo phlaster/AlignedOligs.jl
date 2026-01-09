@@ -35,12 +35,10 @@ function Base.show(io::IO, ::MIME"text/plain", primer::AbstractPrimer)
     println(io, "$dir_str $deg_status")
 
     L = length(primer.msa)
-    pos = primer.pos
-    s, e = pos.start, pos.stop
+    s, _..., e = primer.pos
     term_width = displaysize(io)[2] - 1
-    L_str = string(L)
     bar_start = "|"
-    bar_end = L_str * "|"
+    bar_end = string(L, '|')
     eq_len = max(0, term_width - length(bar_start) - length(bar_end))
     bar = bar_start * repeat('=', eq_len) * bar_end
 
@@ -56,13 +54,9 @@ function Base.show(io::IO, ::MIME"text/plain", primer::AbstractPrimer)
         col_e = map_start_col + round(Int, (e - 1) * scale)
     end
 
-    if primer.is_forward
-        three_prime_col = col_e
-        label = "\\" * string(s) * ":" * string(e) * ">"
-    else
-        three_prime_col = col_s
-        label = "<" * string(s) * ":" * string(e) * "\\"
-    end
+    three_prime_col, label = primer.is_forward ?
+        (col_e, string('\\', s, ':', e, '>')) :
+        (col_s, string('<', s, ':', e, '\\'))
 
     label_len = length(label)
     indent = max(0, three_prime_col - label_len)
@@ -108,7 +102,7 @@ function Base.show(io::IO, ::MIME"text/plain", pp::Pair{<:AbstractPrimer})
 
         term_width = displaysize(io)[2] - 1
         bar_start = "|"
-        bar_end = string(L) * "|"
+        bar_end = string(L, '|')
         eq_len = max(0, term_width - length(bar_start) - length(bar_end))
         bar = bar_start * repeat('=', eq_len) * bar_end
         scale = L == 1 ? 0.0 : (eq_len - 1) / (L - 1.0)
