@@ -9,6 +9,7 @@ export olig_range, description
 export NonDegenIterator, nondegens
 export hasgaps, getgaps, n_deg_pos, n_unique_oligs
 export sampleChar, sampleView, sampleNondeg, sample_max_gc, sample_min_gc
+export unfolded_proportion
 
 abstract type AbstractOlig <: AbstractString end
 abstract type AbstractDegen <: AbstractOlig end
@@ -485,6 +486,16 @@ end
 Base.iterate(olig::AbstractOlig) = length(olig) == 0 ? nothing : (olig[1], 2)
 Base.iterate(olig::AbstractOlig, i::Int) = i>length(olig) ? nothing : (olig[i],i+1)
 
+
+function unfolded_proportion(olig::AbstractOlig; temp::Real=37.0, max_samples::Int=1000)::Float64
+    _ext_unfolded_prop(olig; temp=temp, max_samples=max_samples)
+end
+
+_ext_unfolded_prop(olig; temp, max_samples) = error(
+    "`unfolded_proportion` function requires SeqFold library to be loaded.\n" *
+    "In order to get this functionality, please `]add SeqFold` to your project\n" *
+    "and load it with `using SeqFold` before constructing primers."
+)
 
 
 include("show_oligs.jl")

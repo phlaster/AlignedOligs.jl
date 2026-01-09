@@ -18,7 +18,7 @@ struct Primer{T} <: AbstractPrimer{T}
     is_forward::Bool
     consensus::T
     tail_length::Int
-    tm::@NamedTuple{mean::Float64, conf::Tuple{Float64, Float64}}
+    tm::@NamedTuple{mean::Float64, conf::Tuple{Float64, Float64}, min::Float64, max::Float64}
     dg::Float64
     gc::Float64
     slack::Float64
@@ -41,8 +41,8 @@ function Primer(
     
     underlying_olig = DegenOlig(String(gapped_cons), string(descr))
     
-    Tm = _ext_tm(underlying_olig; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
-    dG = _ext_dg(underlying_olig; max_variants=max_samples, temp=dg_temp)
+    Tm = _ext_tm(underlying_olig; max_samples=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+    dG = _ext_dg(underlying_olig; max_samples=max_samples, temp=dg_temp)
     GC = _ext_gc_content(underlying_olig)
     Primer(msa, interval, is_forward, underlying_olig, tail_length, Tm, dG, GC, slack)
 end
@@ -151,10 +151,10 @@ function construct_primers(
             gc = _ext_gc_content(cons)
             !(gc_range.start / 100 <= gc <= gc_range.stop / 100) && continue
             
-            dg_val = _ext_dg(cons; max_variants=max_samples, temp=dg_temp)
+            dg_val = _ext_dg(cons; max_samples=max_samples, temp=dg_temp)
             dg_val < min_delta_g && continue
             
-            Tm = _ext_tm(cons; max_variants=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
+            Tm = _ext_tm(cons; max_samples=max_samples, conf_int=tm_conf_int, conditions=tm_conds)
             (tm_range.stop < first(Tm.conf) || last(Tm.conf) < tm_range.start) && continue
             
             primer = Primer(msa, interval, is_forward, cons, tail_len, Tm, dg_val, gc, slack)
