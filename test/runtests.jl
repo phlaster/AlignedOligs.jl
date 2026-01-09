@@ -10,7 +10,7 @@ using AlignedOligs.Primers
 
 Random.seed!(42)
 
-@testset verbose=true "AlignedOligs.jl"  begin
+@testset verbose=true failfast=true "AlignedOligs.jl"  begin
     @testset "Code quality (Aqua.jl)" begin
         Aqua.test_all(AlignedOligs)
     end
