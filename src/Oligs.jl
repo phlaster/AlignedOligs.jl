@@ -19,7 +19,7 @@ description(::AbstractString) = ""
 struct Olig <: AbstractOlig
     seq::String
     description::String
-    function Olig(seq::T, descr::Union{AbstractString,Integer}="") where T <: AbstractString
+    function Olig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
         descr = (_d = string(descr); isempty(_d)) ? description(seq) : _d
         seq = uppercase(seq)
         seq_chars = Set(seq)
