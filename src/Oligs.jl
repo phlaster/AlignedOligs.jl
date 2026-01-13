@@ -74,13 +74,11 @@ end
 
 const EMPTY_OLIG = Olig("", "")
 Olig() = EMPTY_OLIG
+Olig(olig::Olig) = olig
 
 const EMPTY_DEGENERATE = DegenOlig("", 0, BigInt(1), "")
 DegenOlig() = EMPTY_DEGENERATE
-
-const EMPTY_GAPPED = GappedOlig(DegenOlig(), Pair{Int, Int}[], 0)
-GappedOlig() = EMPTY_GAPPED
-
+DegenOlig(olig::DegenOlig) = olig
 function DegenOlig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
     descr = string(descr)
     if isempty(seq)
@@ -101,6 +99,9 @@ function DegenOlig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
     return DegenOlig(seq, n_degenerate, n_possible, descr)
 end
 
+const EMPTY_GAPPED = GappedOlig(DegenOlig(), Pair{Int, Int}[], 0)
+GappedOlig() = EMPTY_GAPPED
+GappedOlig(olig::GappedOlig) = olig
 function GappedOlig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
     descr = string(descr)
     if isempty(seq)
@@ -149,24 +150,6 @@ struct NonDegenIterator{T<:AbstractOlig}
     olig::T
     n_variants::Integer
 end
-
-Olig(chars::Vector{Char}, descr::Union{AbstractString,Integer}="") = Olig(String(chars), descr)
-Olig(olig::Olig) = olig
-
-DegenOlig(chars::Vector{Char}, descr::Union{AbstractString,Integer}="") = DegenOlig(String(chars), descr)
-function DegenOlig(olig::AbstractOlig, descr::Union{AbstractString,Integer}="")
-    new_descr = isempty(descr) ? description(olig) : descr
-    DegenOlig(String(olig), new_descr)
-end
-DegenOlig(olig::DegenOlig) = olig
-
-GappedOlig(chars::Vector{Char}, descr::Union{AbstractString,Integer}="") = DegenOlig(String(chars), descr)
-function GappedOlig(olig::AbstractOlig, descr::Union{AbstractString,Integer}="")
-    new_descr = isempty(descr) ? description(olig) : descr
-    GappedOlig(String(olig), new_descr)
-end
-GappedOlig(olig::GappedOlig) = olig
-
 
 
 ##########################

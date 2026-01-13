@@ -43,15 +43,12 @@ end
         @test String(olig) == uppercase(seq)
         @test description(olig) == descr
         
-        @test Olig(collect(seq), descr) == olig
-        
         @test Olig(DegenOlig(seq)) == olig
         @test Olig(GappedOlig(seq)) == olig
     end
     
     for bad_char in setdiff('A':'Z', NON_DEGEN_BASES)
         @test_throws ErrorException Olig("ACGT$bad_char")
-        @test_throws ErrorException Olig(collect("ACGT$bad_char"))
     end
 end
 
@@ -66,8 +63,6 @@ end
         @test deg_olig isa DegenOlig
         @test String(deg_olig) == uppercase(seq)
         @test description(deg_olig) == descr
-        
-        @test DegenOlig(collect(seq), descr) == deg_olig
         
         if !any(c -> c in DEGEN_BASES, seq)
             nondeg = Olig(seq, descr)
