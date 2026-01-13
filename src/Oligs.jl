@@ -278,6 +278,7 @@ function Base.codeunit(go::GappedOlig, i::Integer)
     throw(BoundsError(go, i))
 end
 
+Base.isvalid(::AbstractOlig) = true
 Base.isvalid(olig::AbstractOlig, i::Int) = 1 <= i <= length(olig)
 Base.length(olig::Olig) = length(String(olig))
 Base.length(olig::DegenOlig) = length(String(olig))
