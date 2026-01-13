@@ -302,6 +302,7 @@ hasgaps(ov::OligView) = any(c == '-' for c in ov)
 const EMPTY_GAPS_VECTOR = Vector{Pair{Int, Int}}()
 getgaps(::AbstractOlig) = EMPTY_GAPS_VECTOR
 getgaps(go::GappedOlig) = go.gaps
+getgaps(ov::OligView{GappedOlig}) = ov |> GappedOlig |> getgaps
 
 n_unique_oligs(::AbstractOlig) = BigInt(1)
 n_unique_oligs(d::DegenOlig) = d.n_unique_oligs
