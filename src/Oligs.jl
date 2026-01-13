@@ -149,6 +149,7 @@ end
 struct NonDegenIterator{T<:AbstractOlig}
     olig::T
     n_variants::Integer
+    NonDegenIterator(o::T) where T<:AbstractOlig = new{T}(o, n_unique_oligs(o))
 end
 
 
@@ -428,7 +429,7 @@ nondegens(go::GappedOlig) = hasgaps(go) ?
 
 nondegens(deg::DegenOlig) = n_deg_pos(deg) == 0 ?
     nondegens(Olig(deg)) :
-    NonDegenIterator(deg, n_unique_oligs(deg))
+    NonDegenIterator(deg)
 nondegens(ov::OligView{T}) where T = nondegens(T(ov))
 
 function sampleChar(olig::AbstractOlig)
