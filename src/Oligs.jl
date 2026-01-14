@@ -313,35 +313,36 @@ Base.parent(olig::GappedOlig) = olig.parent
 Base.ncodeunits(olig::AbstractOlig) = length(olig)
 
 Base.codeunit(::AbstractOlig) = UInt8
-Base.codeunit(olig::Olig, i::Integer) = codeunit(String(olig), i)
-Base.codeunit(olig::DegenOlig, i::Integer) = codeunit(String(olig), i)
+Base.codeunit(olig::AbstractOlig, i::Integer) = codeunit(String(olig), i)
 Base.codeunit(ov::OligView, i::Integer) = codeunit(parent(ov), olig_range(ov).start + i - 1)
 function Base.codeunit(go::GappedOlig, i::Integer)
     @boundscheck 1 <= i <= length(go) || throw(BoundsError(go, i))
     parent_len = length(parent(go))
-    cum_gaps = 0
-    ungapped_pos = 0 
+    ungapped_pos = 1
     gapped_pos = 0
     
     for (start, len) in go.gaps
-        positions_before_gap = start - ungapped_pos
-        gapped_end = gapped_pos + positions_before_gap
-        if gapped_pos < i <= gapped_end
-            return UInt8(parent(go)[ungapped_pos + (i - gapped_pos)])
+        num_parent_chars_before_gap = (start - 1) - (ungapped_pos - 1)
+        
+        if gapped_pos < i <= gapped_pos + num_parent_chars_before_gap
+            offset = i - gapped_pos
+            return UInt8(parent(go)[ungapped_pos + offset - 1])
         end
-        gapped_pos = gapped_end
+        
+        gapped_pos += num_parent_chars_before_gap
+        ungapped_pos += num_parent_chars_before_gap
+        
         if gapped_pos < i <= gapped_pos + len
             return UInt8('-')
         end
         gapped_pos += len
-        cum_gaps += len
-        ungapped_pos = start
     end
     
-    if gapped_pos < i <= gapped_pos + (parent_len - ungapped_pos)
-        return UInt8(parent(go)[ungapped_pos + (i - gapped_pos)])
+    offset = i - gapped_pos
+    if ungapped_pos + offset - 1 > parent_len
+        throw(BoundsError(go, i))
     end
-    throw(BoundsError(go, i))
+    return UInt8(parent(go)[ungapped_pos + offset - 1])
 end
 
 Base.isvalid(::AbstractOlig) = true
