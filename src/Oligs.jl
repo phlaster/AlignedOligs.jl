@@ -341,17 +341,17 @@ Base.promote_rule(::Type{T}, ::Type{<:Union{String, SubString}}) where {T<:Abstr
 const EMPTY_OLIG = Olig("", "")
 Olig() = EMPTY_OLIG
 Olig(olig::Olig) = olig
-Olig(seq::AbstractString) = Olig(seq, "")
+Olig(seq::AbstractString) = Olig(seq, description(seq))
 
 const EMPTY_DEGENERATE = DegenOlig("", "")
 DegenOlig() = EMPTY_DEGENERATE
 DegenOlig(olig::DegenOlig) = olig
-DegenOlig(seq::AbstractString) = DegenOlig(seq, "")
+DegenOlig(seq::AbstractString) = DegenOlig(seq, description(seq))
 
 const EMPTY_GAPPED = GappedOlig(DegenOlig(), "")
 GappedOlig() = EMPTY_GAPPED
 GappedOlig(olig::GappedOlig) = olig
-GappedOlig(seq::AbstractString) = GappedOlig(seq, "")
+GappedOlig(seq::AbstractString) = GappedOlig(seq, description(seq))
 
 
 
