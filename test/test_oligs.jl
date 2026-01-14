@@ -31,8 +31,8 @@ end
 
 @testset "Olig Construction" begin
     @test Olig() === Olig("")
-    @test Olig() == Olig("", "empty") == Olig("")
-    @test Olig() !== Olig("", "empty")
+    @test Olig() == Olig("", "") == Olig("")
+    @test Olig() !== Olig("", "123")
     
     for _ in 1:NUM_RANDOM_TESTS
         len = rand(0:50)
@@ -53,7 +53,7 @@ end
 end
 
 @testset "DegenOlig Construction" begin
-    @test DegenOlig() === DegenOlig("")
+    @test DegenOlig() == DegenOlig("")
     
     for _ in 1:NUM_RANDOM_TESTS
         len = rand(0:50)
@@ -76,7 +76,7 @@ end
 end
 
 @testset "GappedOlig Construction" begin
-    @test GappedOlig() === GappedOlig("")
+    @test GappedOlig() == GappedOlig("")
     
     for seq in ["-", "--A--", "A--", "--A", "A---T", "-G-C-", "ACGT", ""]
         go = GappedOlig(seq)

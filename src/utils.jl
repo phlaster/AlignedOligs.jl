@@ -1,6 +1,7 @@
 const NON_DEGEN_BASES = "ACGT" |> collect |> sort |> Tuple
 const DEGEN_BASES = "MRWSYKVHDBN" |> collect |> sort |> Tuple
 const ALL_BASES = [NON_DEGEN_BASES..., DEGEN_BASES...] |> sort |> Tuple
+const BASES_W_GAPS = (ALL_BASES..., '-')
 
 const IUPAC_B2V = Dict(
     'A'=>Tuple("A"),  'C'=>Tuple("C"),  'G'=>Tuple("G"),  'T'=>Tuple("T"),

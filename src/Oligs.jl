@@ -19,14 +19,17 @@ description(::AbstractString) = ""
 struct Olig <: AbstractOlig
     seq::String
     description::String
-    function Olig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
-        descr = (_d = string(descr); isempty(_d)) ? description(seq) : _d
-        seq = uppercase(seq)
-        seq_chars = Set(seq)
-        if !isempty(seq) && !issubset(seq_chars, NON_DEGEN_BASES)
-            error("Olig contains unallowed characters: $(join(setdiff(seq_chars, NON_DEGEN_BASES), ", "))")
+
+    function Olig(seq::AbstractString, descr::Union{AbstractString,Integer})
+        if !isempty(seq) && !isvalid(Olig, seq)
+            invalid_chars = join(setdiff(Set(seq), NON_DEGEN_BASES), ", ")
+            error("Olig contains unallowed characters: $invalid_chars")
         end
-        new(seq, descr)
+        
+        seq = uppercase(seq)
+        descr_str = string(descr)
+        
+        new(seq, descr_str)
     end
 end
 struct DegenOlig <: AbstractDegen
@@ -35,107 +38,60 @@ struct DegenOlig <: AbstractDegen
     n_unique_oligs::BigInt
     description::String
 
-    function DegenOlig(seq::AbstractString, n_deg::Int, n_unique::BigInt, descr::Union{AbstractString,Integer})
-        descr = string(descr)
-        seq_chars = Set(seq)
-        if !isempty(seq) && !issubset(seq_chars, ALL_BASES)
-            error("DegenOlig contains unallowed characters: $(join(setdiff(seq_chars, ALL_BASES), ", "))")
+    function DegenOlig(seq::AbstractString, descr::Union{AbstractString,Integer})
+        if !isempty(seq) && !isvalid(DegenOlig, seq)
+            invalid_chars = join(setdiff(Set(seq), ALL_BASES), ", ")
+            error("DegenOlig contains unallowed characters: $invalid_chars")
         end
         
-        actual_deg = count(char -> char in DEGEN_BASES, seq)
-        if actual_deg != n_deg
-            error("Inconsistent degenerate position count: calculated $actual_deg, given $n_deg")
-        end
+        seq = uppercase(seq)
+        descr_str = string(descr)
+
+        n_deg = count(char -> char in DEGEN_BASES, seq)
+        n_unique = reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
         
-        actual_unique = isempty(seq) ? BigInt(1) : reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
-        if actual_unique != n_unique
-            error("Inconsistent unique olig count: calculated $actual_unique, given $n_unique")
-        end
-        
-        new(uppercase(seq), n_deg, n_unique, descr)
+        new(seq, n_deg, n_unique, descr_str)
     end
 end
 struct GappedOlig <: AbstractGapped
     parent::DegenOlig
     gaps::Vector{Pair{Int, Int}}
     total_length::Int
-    
-    function GappedOlig(parent::DegenOlig, gaps::Vector{Pair{Int, Int}}, total_len::Int)
-        issorted(gaps, by=first) || error("Gaps ids are not sorted")
-        
-        calculated_length = length(parent.seq) + sum(x->x.second, gaps, init=0)
-        if calculated_length != total_len
-            error("Inconsistent total length: calculated $calculated_length, given $total_len")
+
+    function GappedOlig(seq::AbstractString, descr::Union{AbstractString,Integer})
+        if !isempty(seq) && !isvalid(GappedOlig, seq)
+            invalid_chars = join(setdiff(Set(seq), BASES_W_GAPS), ", ")
+            error("DegenOlig contains unallowed characters: $invalid_chars")
         end
         
-        new(parent, gaps, total_len)
-    end
-end
-
-const EMPTY_OLIG = Olig("", "")
-Olig() = EMPTY_OLIG
-Olig(olig::Olig) = olig
-
-const EMPTY_DEGENERATE = DegenOlig("", 0, BigInt(1), "")
-DegenOlig() = EMPTY_DEGENERATE
-DegenOlig(olig::DegenOlig) = olig
-function DegenOlig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
-    descr = string(descr)
-    if isempty(seq)
-        if isempty(descr)
-            return DegenOlig()
-        end
-        return DegenOlig("", 0, BigInt(1), descr)
-    end
-
-    seq = uppercase(seq)
-    seq_chars = Set(seq)
-    if !issubset(seq_chars, ALL_BASES)
-        error("DegenOlig contains unallowed characters: $(join(setdiff(seq_chars, ALL_BASES), ", "))")
-    end
-    
-    n_degenerate = count(char -> char in DEGEN_BASES, seq)
-    n_possible = reduce(*, (IUPAC_COUNTS[char] for char in seq), init=BigInt(1))
-    return DegenOlig(seq, n_degenerate, n_possible, descr)
-end
-
-const EMPTY_GAPPED = GappedOlig(DegenOlig(), Pair{Int, Int}[], 0)
-GappedOlig() = EMPTY_GAPPED
-GappedOlig(olig::GappedOlig) = olig
-function GappedOlig(seq::AbstractString, descr::Union{AbstractString,Integer}="")
-    descr = string(descr)
-    if isempty(seq)
-        if isempty(descr)
-            return GappedOlig()
-        end
-        return GappedOlig(DegenOlig("", descr), Pair{Int, Int}[], 0)
-    end
-    
-    parent_seq = filter(!=('-'), seq)
-    underlying_olig = DegenOlig(parent_seq, descr)
-
-    gaps = Pair{Int, Int}[]
-    parent_pos = 0
-    i = 1
-    n = length(seq)
-    
-    @inbounds while i <= n
-        if seq[i] != '-'
-            parent_pos += 1
-            i += 1
-        else
-            gap_start = parent_pos + 1
-            len = 0
-            while i <= n && seq[i] == '-'
-                len += 1
+        seq = uppercase(seq)
+        total_len = length(seq)
+        descr_str = string(descr)
+        parent_seq = filter(!=('-'), seq)
+        parent_olig = DegenOlig(parent_seq, descr_str)
+        
+        gaps = Pair{Int,Int}[]
+        parent_pos = 0
+        i = 1
+        
+        @inbounds while i <= total_len
+            if seq[i] != '-'
+                parent_pos += 1
                 i += 1
+            else
+                gap_start = parent_pos + 1
+                len = 0
+                while i <= total_len && seq[i] == '-'
+                    len += 1
+                    i += 1
+                end
+                push!(gaps, gap_start => len)
             end
-            push!(gaps, gap_start => len)
         end
-    end
-    return GappedOlig(underlying_olig, gaps, n)
-end
 
+        return new(parent_olig, gaps, total_len)
+    end
+end
 struct OligView{T<:AbstractOlig} <: AbstractOlig
     parent::T
     range::UnitRange{Int}
@@ -145,7 +101,6 @@ struct OligView{T<:AbstractOlig} <: AbstractOlig
         new{T}(olig, interval)
     end
 end
-
 struct NonDegenIterator{T<:AbstractOlig}
     olig::T
     n_variants::Integer
@@ -232,8 +187,8 @@ function Base.getindex(ov::OligView, i::Int)
     return getindex(parent(ov), adjusted_i)
 end
 
-Base.String(olig::Olig) = olig.seq
-Base.String(olig::DegenOlig) = olig.seq
+Base.uppercase(olig::AbstractOlig) = String(olig)
+Base.String(olig::AbstractOlig) = olig.seq
 Base.String(ov::OligView) = String(parent(ov))[olig_range(ov)]
 function Base.String(go::GappedOlig)
     parent_len = length(parent(go))
@@ -347,8 +302,11 @@ end
 
 Base.isvalid(::AbstractOlig) = true
 Base.isvalid(olig::AbstractOlig, i::Int) = 1 <= i <= length(olig)
-Base.length(olig::Olig) = length(String(olig))
-Base.length(olig::DegenOlig) = length(String(olig))
+Base.isvalid(::Type{Olig}, s::AbstractString) = all(c -> uppercase(c) in NON_DEGEN_BASES, s)
+Base.isvalid(::Type{DegenOlig}, s::AbstractString) = all(c -> uppercase(c) in ALL_BASES, s)
+Base.isvalid(::Type{GappedOlig}, s::AbstractString) = all(c -> uppercase(c) in BASES_W_GAPS, s)
+
+Base.length(olig::AbstractOlig) = length(String(olig))
 Base.length(go::GappedOlig) = go.total_length
 Base.length(ov::OligView) = length(olig_range(ov))
 Base.isempty(olig::AbstractOlig) = length(olig) == 0
@@ -365,6 +323,12 @@ function Base.convert(::Type{T}, o::AbstractOlig) where T<:AbstractOlig
         return Olig(String(o), description(o))
     end
 end
+
+_is_degenerate_type(::Type{T}) where {T<:AbstractOlig} = false
+_is_degenerate_type(::Type{T}) where {T<:AbstractDegen} = true
+_is_degenerate_type(::Type{OligView{T}}) where {T} = _is_degenerate_type(T)
+_has_gaps_type(::Type{T}) where {T<:AbstractOlig} = T <: Union{GappedOlig, OligView{<:GappedOlig}}
+
 function Base.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:AbstractOlig, T2<:AbstractOlig}
     is_deg_type = _is_degenerate_type(T1) || _is_degenerate_type(T2)
     is_gapped_type = _has_gaps_type(T1) || _has_gaps_type(T2)
@@ -373,6 +337,21 @@ end
 Base.promote_rule(::Type{<:Union{String, SubString}}, ::Type{T}) where {T<:AbstractOlig} = T
 Base.promote_rule(::Type{T}, ::Type{<:Union{String, SubString}}) where {T<:AbstractOlig} = T
 
+
+const EMPTY_OLIG = Olig("", "")
+Olig() = EMPTY_OLIG
+Olig(olig::Olig) = olig
+Olig(seq::AbstractString) = Olig(seq, "")
+
+const EMPTY_DEGENERATE = DegenOlig("", "")
+DegenOlig() = EMPTY_DEGENERATE
+DegenOlig(olig::DegenOlig) = olig
+DegenOlig(seq::AbstractString) = DegenOlig(seq, "")
+
+const EMPTY_GAPPED = GappedOlig(DegenOlig(), "")
+GappedOlig() = EMPTY_GAPPED
+GappedOlig(olig::GappedOlig) = olig
+GappedOlig(seq::AbstractString) = GappedOlig(seq, "")
 
 
 
@@ -407,22 +386,6 @@ n_deg_pos(d::DegenOlig) = d.n_deg_pos
 n_deg_pos(ov::OligView) = count(char -> char in DEGEN_BASES, ov)
 n_deg_pos(go::GappedOlig) = n_deg_pos(parent(go))
 
-
-
-_base_olig_type(::Type{T}) where {T<:Olig} = Olig
-_base_olig_type(::Type{T}) where {T<:DegenOlig} = DegenOlig
-_base_olig_type(::Type{GappedOlig}) = GappedOlig
-_base_olig_type(::Type{OligView{U}}) where {U} = _base_olig_type(U)
-_base_olig_type(::Type{T}) where {T<:AbstractOlig} = T  # fallback
-
-_is_degenerate_type(::Type{T}) where {T<:AbstractOlig} = false
-_is_degenerate_type(::Type{T}) where {T<:AbstractDegen} = true
-_is_degenerate_type(::Type{OligView{T}}) where {T} = _is_degenerate_type(T)
-
-_has_gaps_type(::Type{T}) where {T<:AbstractOlig} = T <: Union{GappedOlig, OligView{<:GappedOlig}}
-
-
-
 nondegens(olig::Olig) = isempty(olig) ? Tuple{}() : (olig,)
 nondegens(go::GappedOlig) = hasgaps(go) ?
     error("Cannot iterate over sequence with gaps") :
@@ -446,6 +409,13 @@ function sampleView(olig::AbstractOlig, len::Int)
     start = rand(1:(n - len + 1))
     return olig[start:start+len-1]
 end
+
+
+_base_olig_type(::Type{T}) where {T<:Olig} = Olig
+_base_olig_type(::Type{T}) where {T<:DegenOlig} = DegenOlig
+_base_olig_type(::Type{GappedOlig}) = GappedOlig
+_base_olig_type(::Type{OligView{U}}) where {U} = _base_olig_type(U)
+_base_olig_type(::Type{T}) where {T<:AbstractOlig} = T  # fallback
 
 sampleNondeg(o::Olig) = o
 sampleNondeg(o::OligView{Olig}) = Olig(o)
