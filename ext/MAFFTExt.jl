@@ -1,4 +1,3 @@
-__precompile__(false)
 module MAFFTExt
 
 using MAFFT_jll

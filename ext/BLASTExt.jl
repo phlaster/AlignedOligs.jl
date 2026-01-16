@@ -1,4 +1,3 @@
-__precompile__(false)
 module BLASTExt
 
 using BLAST_jll

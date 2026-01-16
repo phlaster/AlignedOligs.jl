@@ -1,4 +1,3 @@
-__precompile__(false)
 module SeqFoldExt
 
 using Statistics
@@ -33,9 +32,10 @@ function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_samples::Int=1000, 
     total_variants == 1 && return SeqFold.dg(String(olig); temp=temp)
 
     T_K::Float64 = temp + 273.15
-    R = 1.9872e-3
-    RT = R * T_K
-    N = clamp(total_variants, 1, max_samples)
+    R::Float64 = 1.9872e-3
+    RT::Float64 = R * T_K
+    N::Int = clamp(total_variants, 1, max_samples)
+    ΔGs::Float64 = Inf64
     if mode === :average
         log_terms = Vector{Float16}(undef, N)
         if total_variants <= max_samples
@@ -51,9 +51,8 @@ function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_samples::Int=1000, 
             end
         end
         log_Q = logsumexp(log_terms) - log(N)
-        return -RT * log_Q
+        ΔGs = -RT * log_Q
     elseif mode === :worstcase
-        ΔGs = Inf64
         if total_variants <= max_samples
             for o in nondegens(olig)
                 ΔGs = min(SeqFold.dg(String(o); temp=temp), ΔGs)
@@ -64,18 +63,15 @@ function SeqFold.dg(olig::AbstractOlig; temp::Real=37.0, max_samples::Int=1000, 
                 ΔGs = min(SeqFold.dg(String(o); temp=temp), ΔGs)
             end
         end
-        return ΔGs
     else
         error("Invalid mode: $mode. Supported modes are :average and :worstcase.")
     end
+    return round(ΔGs, digits=2)
 end
 
-function SeqFold.dg_cache(olig::AbstractOlig; temp::Real = 37.0)::Matrix{Float64}
-    if hasgaps(olig)
-        error("Free energy cache not supported for gapped sequences")
-    else
-        return SeqFold.dg_cache(String(Olig(olig)); temp=temp)
-    end
+function SeqFold.dg_cache(olig::AbstractOlig; temp::Real=37.0)::Matrix{Float64}
+    hasgaps(olig) && error("Free energy cache not supported for gapped sequences")
+    return SeqFold.dg_cache(String(Olig(olig)); temp=temp)
 end
 function SeqFold.tm(
     olig1::AbstractOlig,
@@ -168,7 +164,7 @@ SeqFold.tm(primer::AbstractPrimer) = primer.tm
 SeqFold.dg(primer::AbstractPrimer) = primer.dg
 SeqFold.gc_content(primer::AbstractPrimer) = primer.gc
 
-function Oligs._ext_unfolded_prop(olig; temp, max_samples)
+function Oligs.unfolded_proportion(olig; temp, max_samples)
     hasgaps(olig) && error("Folding not supported for gapped sequences")
     isempty(olig) && return NaN
     total_variants = n_unique_oligs(olig)
@@ -202,10 +198,17 @@ function Oligs._ext_unfolded_prop(olig; temp, max_samples)
     end
     return clamp(avg_unfolded, 0.0, 1.0)
 end
-
-Primers._ext_revcomp(args...; kwargs...) = SeqFold.revcomp(args...; kwargs...)
-Primers._ext_tm(args...; kwargs...) = SeqFold.tm(args...; kwargs...)
-Primers._ext_dg(args...; kwargs...) = SeqFold.dg(args...; kwargs...)
-Primers._ext_gc_content(args...; kwargs...) = SeqFold.gc_content(args...; kwargs...)
+function Primers._ext_revcomp(o::AbstractOlig)
+    SeqFold.revcomp(o)
+end
+function Primers._ext_tm(olig::AbstractOlig; max_samples, conf_int, conditions)
+    SeqFold.tm(olig; max_samples=max_samples, conf_int=conf_int, conditions=conditions)
+end
+function Primers._ext_dg(olig::AbstractOlig; max_samples, temp)
+    SeqFold.dg(olig; max_samples=max_samples, temp=temp)
+end
+function Primers._ext_gc_content(olig::AbstractOlig)
+    SeqFold.gc_content(olig)
+end
 
 end  # module
