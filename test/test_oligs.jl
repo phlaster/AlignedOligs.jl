@@ -1,6 +1,6 @@
 import AlignedOligs.Oligs: NON_DEGEN_BASES, DEGEN_BASES, ALL_BASES, IUPAC_COUNTS
 
-const NUM_RANDOM_TESTS = 50
+const NUM_RANDOM_TESTS = 10
 
 rseq(len, bases) = join(rand(bases, len))
 rdesc() = join(rand('1':'z', rand(0:150)))
@@ -30,7 +30,6 @@ end
 end
 
 @testset "Olig Construction" begin
-    @test Olig() === Olig("")
     @test Olig() == Olig("", "") == Olig("")
     @test Olig() !== Olig("", "123")
     

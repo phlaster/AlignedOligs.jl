@@ -18,7 +18,7 @@ struct MSA <: AbstractMSA
     base_count::Matrix{Float64}
     bootstrap::Int
 
-    function _compute_base_counts(
+    function _bootstrap_base_counts(
         seqs::Vector{<:AbstractString}, 
         bootstrap::Int;
         progress_label::String, 
@@ -63,7 +63,7 @@ struct MSA <: AbstractMSA
 
         isempty(seqs) && return new(GappedOlig[], zeros(4, 0), bootstrap)
 
-        base_count = _compute_base_counts(seqs, bootstrap; progress_label="Bootstrap, $bootstrap it.", barlen=19)
+        base_count = _bootstrap_base_counts(seqs, bootstrap; progress_label="Bootstrap, $bootstrap it.", barlen=19)
         gapped_seqs = GappedOlig.(seqs)
         return new(gapped_seqs, base_count, bootstrap)
     end

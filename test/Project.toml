@@ -1,7 +1,10 @@
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-MAFFT_jll = "72a4bdf2-be5e-5c84-b157-f1dc2927f791" 
+MAFFT_jll = "72a4bdf2-be5e-5c84-b157-f1dc2927f791"
+NCBIBlast = "dcaf3faf-48b5-45a7-abb1-fcfd75344536"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 SeqFold = "b3b2a78d-ef5a-44e0-bc1e-af93888afa44"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

@@ -20,7 +20,7 @@ Random.seed!(42)
     
     @testset "Oligs" include("test_oligs.jl")
 
-    # @testset "MSA" include("test_msa.jl")
+    # @testset "Alignments" include("test_alignments.jl")
     # @testset "Primers" include("test_primers.jl")
     # @testset "SeqFold methods" include("test_seqfold.jl")
 

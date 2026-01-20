@@ -13,7 +13,7 @@ export Oligs, Primers, Alignments
 
 
 include("Oligs.jl")
-include("MSA.jl")
+include("Alignments.jl")
 include("Primers.jl")
 
 end # module
